@@ -247,6 +247,9 @@ class ErazerNode {
     def iconSvg:string ""
     ; what the icon recogniser calls it (ErazerIcons), "" = no confident name
     def iconName:string ""
+    ; the id the EVG element and the overlay box share ("n12"), set when
+    ; the tree is written out
+    def uid:string ""
     def iconConf:double 0.0
     def iconPaths:[string]
     def iconFills:[string]

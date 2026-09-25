@@ -7,276 +7,293 @@
 <meta name="description" content="Tunnista UI-elementit kuvakaappauksesta ja rakenna niistä sisäkkäinen EVG-puu. Ei palvelinta — käännetty Ranger Erazer.">
 <style>
   :root {
-    --bg: #12151b; --panel: #171b23; --line: #2a3040; --ink: #e8ecf4;
-    --muted: #97a1b4; --accent: #7db3ff; --ok: #8fd39a;
+    --bg: #0f1217; --panel: #161a21; --panel2: #1b2029; --line: #2a3040; --ink: #e8ecf4;
+    --muted: #97a1b4; --accent: #7db3ff; --ok: #8fd39a; --sel: #3b82f6;
     --stage: #f4f1ea; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  header { padding: 28px 24px 12px; max-width: 1280px; margin: 0 auto; }
-  h1 { margin: 0 0 6px; font-size: 26px; font-weight: 650; letter-spacing: -0.01em; }
-  header p { margin: 0; color: var(--muted); max-width: 72ch; }
-  header a { color: var(--accent); }
-  .crumb { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+  a { color: var(--accent); }
+  /* Figma-style: tree left, canvas in the middle, properties right */
+  .app {
+    display: grid; height: 100vh;
+    grid-template-columns: 260px minmax(0, 1fr) 300px;
+    grid-template-rows: 48px minmax(0, 1fr);
+    grid-template-areas: "top top top" "left center right";
+  }
+  .topbar {
+    grid-area: top; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+  .brand strong { font-size: 15px; letter-spacing: -0.01em; }
+  .crumb { font-size: 11.5px; color: var(--muted); }
   .crumb a { color: var(--muted); text-decoration: none; }
   .crumb a:hover { color: var(--accent); }
-  main {
-    max-width: 1280px; margin: 0 auto; padding: 8px 24px 64px;
-    display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 18px;
+  .tb-actions { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border-radius: 8px; padding: 4px; }
+  .tb-actions.over { outline: 2px dashed var(--accent); }
+  .tb-actions .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  .tb-actions .hint { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .chk { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .left { grid-area: left; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .right { grid-area: right; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .center { grid-area: center; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--stage); }
+  .tabs {
+    display: flex; align-items: center; gap: 2px; padding: 0 8px; min-height: 38px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex: none;
   }
-  @media (max-width: 900px) {
-    main { grid-template-columns: minmax(0, 1fr); padding: 8px 14px 48px; }
+  .tabs > button {
+    border: 0; background: transparent; border-radius: 6px; padding: 5px 10px; min-height: 0;
+    color: var(--muted); font-weight: 600; font-size: 12.5px;
   }
-  section {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  .tabs > button:hover { color: var(--ink); border: 0; }
+  .tabs > button.on { color: var(--ink); background: var(--panel2); }
+  .tabs .counts { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .pane { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+  .pane[hidden], .viewport[hidden] { display: none; }
+  .pane h3 { margin: 12px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .pane h3:first-child { margin-top: 2px; }
+  .viewport { flex: 1; min-height: 0; overflow: auto; position: relative; }
+  .stage { min-height: 100%; padding: 32px 32px 96px; position: relative; }
+  .stage.empty {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    color: #6b7280; font-size: 14px;
   }
-  .head {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
-  }
-  .body { padding: 14px; }
+  .stage > .frame, .stage > div { margin: 0 auto; }
   button, .filebtn {
-    font: inherit; font-size: 13px; color: var(--ink); background: #202634;
-    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+    font: inherit; font-size: 12.5px; color: var(--ink); background: #202634;
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer;
+    white-space: nowrap;
   }
   button:hover, .filebtn:hover { border-color: var(--accent); color: var(--accent); }
   button.primary, .filebtn.primary { background: var(--accent); border-color: var(--accent); color: #10131a; font-weight: 600; }
-  .filebtn { display: inline-flex; align-items: center; min-height: 44px; }
+  .filebtn { display: inline-flex; align-items: center; }
+  button:disabled, .filebtn:disabled { opacity: 0.45; cursor: not-allowed; }
   /* display:none on file inputs breaks the picker on some iOS versions. */
   .sr-file {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-  .drop {
-    position: relative; margin-top: 10px; padding: 16px;
-    border: 1px dashed var(--line); border-radius: 10px; background: #12151b;
-    min-height: 96px;
+  select, input[type="text"], input[type="number"] {
+    font: inherit; font-size: 12px; color: var(--ink); background: #12151b; border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 6px;
   }
-  .drop.over { border-color: var(--accent); }
-  .drop p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
-  .stage {
-    background: var(--stage); min-height: 200px; display: flex; align-items: center; justify-content: center;
-    padding: 16px; overflow: auto; position: relative;
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+  .counts { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+  pre {
+    margin: 0; padding: 8px; font: 11.5px/1.45 var(--mono); color: var(--ok); background: #12151b;
+    border-radius: 6px; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto;
   }
-  .ocr-row { margin-top: 12px; align-items: center; }
-  .ocr-row label { display: inline-flex; gap: 6px; align-items: center; }
-  .rebuild-page { position: relative; overflow: hidden; transform-origin: 0 0; }
+  /* Detected view: the image with Erazer's boxes; the overlay shares the box */
+  .frame { position: relative; display: block; }
+  .frame canvas { display: block; width: 100%; height: auto; }
+  .frame svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; }
+  .frame svg rect[data-node] { cursor: pointer; pointer-events: all; fill: transparent; }
+  .frame svg rect[data-node]:hover { stroke: var(--sel) !important; }
+  .frame svg rect[data-node].sel { stroke: var(--sel) !important; stroke-width: 3 !important; fill: rgba(59, 130, 246, 0.12); }
+  .frame svg rect[data-box].picked { fill: rgba(125, 179, 255, 0.32); stroke-width: 2; }
+  .frame svg text { pointer-events: none; }
+  .lab-mode .frame svg rect[data-box] { cursor: copy; }
+  /* EVG view */
+  .rebuild-page { position: relative; overflow: hidden; transform-origin: 0 0; box-shadow: 0 1px 12px rgba(0, 0, 0, 0.18); }
   .rebuild-page div, .rebuild-page span { position: absolute; box-sizing: border-box; }
   .rebuild-page span { white-space: nowrap; line-height: 1; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .stage.empty { color: #6b7280; font-size: 14px; text-align: center; }
-  /* Reconstruction editor: canvas + inspector, Figma-style */
-  .editor { display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
-  @media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); } }
-  .canvas-col { min-width: 0; border-right: 1px solid var(--line); }
-  #rebuild.canvas { display: block; max-height: 78vh; overflow: auto; padding: 16px; }
-  #rebuild.canvas:focus { outline: none; }
-  #rebuild.canvas > div { margin: 0 auto; }
-  .zoombar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
-  .zoombar button { padding: 3px 10px; min-height: 0; font-size: 12px; }
-  .zoombar .zoomval { font-family: var(--mono); min-width: 44px; text-align: center; color: var(--ink); }
-  .zoombar.bottom { border-top: 1px solid var(--line); justify-content: flex-end; }
-  .zoombar .spacer { flex: 1; }
   .rebuild-page [data-sel] { cursor: pointer; }
-  .rebuild-page .is-selected { outline: 2px solid #3b82f6; outline-offset: 0; z-index: 1; }
+  .rebuild-page .is-selected { outline: 2px solid var(--sel); outline-offset: 0; z-index: 1; }
   .rebuild-page .is-hover { outline: 1px solid rgba(59, 130, 246, 0.6); }
-  .inspector { padding: 12px 14px; font-size: 12.5px; color: var(--ink); max-height: calc(78vh + 80px); overflow: auto; }
-  .inspector h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  #rebuild:focus { outline: none; }
+  /* Floating bar, bottom centre: zoom and the image's opacity */
+  .floatbar {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5;
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 10px;
+    background: #ffffff; color: #1f2937; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22); font-size: 12px;
+  }
+  .floatbar button { background: transparent; color: #1f2937; border: 1px solid transparent; padding: 3px 9px; }
+  .floatbar button:hover { border-color: #d1d5db; color: #111827; }
+  .floatbar .zoomval { font-family: var(--mono); min-width: 44px; text-align: center; }
+  .floatbar .sep { width: 1px; height: 18px; background: #e5e7eb; margin: 0 2px; }
+  .floatbar label { display: inline-flex; align-items: center; gap: 6px; color: #4b5563; }
+  .floatbar input[type="range"] { width: 80px; accent-color: var(--sel); }
+  /* Layers */
+  .layers { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+  .layers li { padding: 3px 6px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layers li:hover { background: #202634; }
+  .layers li.on { background: #1d3557; color: #fff; }
+  .layers li .role { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-right: 6px; }
+  .layers li.on .role { color: #bcd3ff; }
+  .layers li.muted { color: var(--muted); cursor: default; white-space: normal; }
+  /* Inspector */
+  .inspector { font-size: 12.5px; }
+  .inspector h2 { margin: 2px 0 10px; font-size: 13px; }
   .inspector .row { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px; align-items: center; margin: 5px 0; }
   .inspector .row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .inspector .row.four label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 11px; }
-  .inspector input, .inspector select {
-    font: inherit; font-size: 12px; color: var(--ink); background: #12151b; border: 1px solid var(--line);
-    border-radius: 6px; padding: 4px 6px; min-width: 0; width: 100%; box-sizing: border-box;
-  }
-  .inspector input[type="color"] { padding: 0 2px; height: 26px; }
-  .inspector .muted { color: var(--muted); }
-  .inspector .acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
-  .inspector .acts button { padding: 4px 10px; min-height: 0; font-size: 12px; }
+  .inspector input, .inspector select { min-width: 0; width: 100%; }
+  .inspector input[type="color"] { padding: 0 2px; height: 26px; background: #12151b; border: 1px solid var(--line); border-radius: 6px; }
+  .muted { color: var(--muted); }
+  .inspector .acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
   .inspector .danger:hover { border-color: #f87171; color: #f87171; }
-  .layers { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 11.5px; }
-  .layers li { padding: 2px 4px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .layers li:hover { background: #202634; }
-  .layers li.on { background: #1d3557; color: #fff; }
-  /* Overlay must share the image box. The stage flex-centers; pinning the SVG
-     to the stage's padding made the boxes sit on the left of a centred photo. */
-  .frame { position: relative; display: inline-block; max-width: 100%; vertical-align: top; }
-  .frame canvas { display: block; max-width: 100%; height: auto; width: auto; }
-  .frame svg {
-    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
-    pointer-events: none; overflow: hidden;
-  }
-  .frame svg rect[data-box] { pointer-events: auto; cursor: pointer; }
-  .frame svg rect[data-box].picked { fill: rgba(125, 179, 255, 0.32); stroke-width: 2; }
-  .concept {
-    display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0;
-  }
-  .concept label {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
-    color: var(--ink); cursor: pointer;
-  }
-  #newConcept {
-    font: inherit; font-size: 13px; color: var(--ink); background: #12151b;
-    border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; min-width: 140px;
-  }
-  .op {
-    margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500;
-    display: flex; align-items: center; gap: 8px; color: var(--muted);
-  }
-  .op input[type="range"] { width: 88px; accent-color: var(--accent); }
-  @media (max-width: 900px) {
-    button, .filebtn { min-height: 44px; padding: 10px 16px; }
-    .op { width: 100%; margin: 6px 0 0; }
-  }
-  .stage img, .stage canvas { max-width: 100%; height: auto; display: block; }
-  pre {
-    margin: 0; padding: 14px; font: 12px/1.45 var(--mono); color: var(--ok);
-    white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
-  }
-  .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
-  .counts { font-family: var(--mono); font-size: 12px; color: var(--accent); }
-  button:disabled, .filebtn:disabled { opacity: 0.45; cursor: not-allowed; }
+  /* Layout lab */
+  .concept { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .concept label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
+  #newConcept { min-width: 120px; flex: 1; }
   .capture-host {
     position: absolute; left: -12000px; top: 0; background: #e8ecf0;
     pointer-events: none; width: 720px; font: 14px/1.4 system-ui, sans-serif;
   }
+  @media (max-width: 900px) {
+    .app {
+      height: auto; grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto 70vh auto auto;
+      grid-template-areas: "top" "center" "right" "left";
+    }
+    .topbar { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+    .brand { flex: 1 1 auto; }
+    .tb-actions { order: 3; flex: 1 1 100%; flex-wrap: wrap; padding: 0; }
+    .tb-actions .sep { display: none; }
+    .tb-actions .hint { flex-basis: 100%; white-space: normal; }
+    .left, .right { max-height: 60vh; border: 0; border-top: 1px solid var(--line); }
+    button, .filebtn { min-height: 38px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <p class="crumb"><a href="https://terotests.github.io/Ranger/evg/">EVG showcase</a> · <a href="https://terotests.github.io/Ranger/evg/tracer/">Bitmap tracer</a> · erazer</p>
-  <h1>Erazer</h1>
-  <p>
-    Bitmap-tracer seuraa valokuvan mustetta. Erazer etsii <strong>UI-elementtejä</strong>:
-    sisäkkäisiä laatikoita, tekstiä, nappeja, kenttiä, tabbeja, valikoita, checkboxeja
-    ja ikoneita, ja kirjoittaa niistä EVG-puun. Päälle tulee pieni
-    <strong>layout-verkko</strong>: se näkee em-normalisoitua geometriaa, ei screenshot-pikseleitä,
-    ja sen voi opettaa valitsemalla laatikoita. Kuva ei poistu koneelta.
-  </p>
-</header>
-<main>
-  <div>
-    <section>
-      <div class="head">Lähde</div>
-      <div class="body">
-        <p class="hint">Puhelimessa: <strong>Valitse kuva</strong> avaa Kuvat / kameran. Voit myös liittää kuvakaappauksen. Kuva ei poistu koneelta.</p>
-        <div class="drop" id="drop" tabindex="0">
-          <p>Pudota, liitä (Ctrl/⌘+V) tai valitse PNG/JPEG/WebP.</p>
-          <div class="actions">
-            <label class="filebtn primary" for="file">Valitse kuva</label>
-            <input id="file" class="sr-file" type="file" accept="image/*">
-            <label class="filebtn" for="camera">Kamera</label>
-            <input id="camera" class="sr-file" type="file" accept="image/*" capture="environment">
-            <button type="button" id="pasteBtn">Liitä</button>
-          </div>
-        </div>
-        <div class="actions ocr-row">
-          <label><input type="checkbox" id="ocrOn" checked> Lue teksti (OCR)</label>
-          <select id="ocrLang" aria-label="OCR-kieli">
-            <option value="eng">englanti</option>
-            <option value="eng+fin">englanti + suomi</option>
-          </select>
-          <span class="hint" id="ocrState">Tesseract.js, ladataan ensimmäisellä kerralla (~5 Mt). Kuva ei poistu koneelta.</span>
-        </div>
-        <p class="hint" style="margin-top:14px">Synteettinen 5×7-fixtuuri</p>
-        <div class="actions">
-          <button type="button" id="formBtn">Lomake</button>
-          <button type="button" id="tabsBtn">Tabit</button>
-          <button type="button" id="menuBtn">Valikko</button>
-          <button type="button" id="iconBtn">Ikoni</button>
-          <button type="button" id="chipsBtn">Napit rivissä</button>
-          <button type="button" id="sliderBtn">Slider</button>
-        </div>
-        <p class="hint" style="margin-top:14px">HTML-komponentit (system-ui, kuvakaappaus)</p>
-        <div class="actions">
-          <button type="button" data-png="login.png">Web-lomake</button>
-          <button type="button" data-png="settings.png">Asetukset</button>
-          <button type="button" data-png="tabs.png">HTML-tabit</button>
-          <button type="button" data-png="menu.png">HTML-valikko</button>
-          <button type="button" data-png="toolbar.png">Työkalupalkki</button>
-          <button type="button" data-png="dialog.png">Dialogi</button>
-          <button type="button" data-png="buttons.png">Napit</button>
-          <button type="button" data-png="nav.png">Sivupalkki</button>
-        </div>
-        <p class="hint" style="margin-top:14px">shadcn/ui (dark zinc, kuvakaappaus)</p>
-        <div class="actions">
-          <button type="button" data-png="shadcn-dash.png">Dashboard</button>
-          <button type="button" data-png="shadcn-kit.png">Kit</button>
-          <button type="button" data-png="shadcn-nav.png">Nav</button>
-          <button type="button" data-png="shadcn-chart.png">Chart</button>
-          <button type="button" data-png="shadcn-balance.png">Saldo</button>
-        </div>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <strong>Erazer</strong>
+      <span class="crumb"><a href="https://terotests.github.io/Ranger/evg/">EVG showcase</a> · <a href="https://terotests.github.io/Ranger/evg/tracer/">Bitmap tracer</a></span>
+    </div>
+    <div class="tb-actions" id="drop" tabindex="0" title="Pudota, liitä (Ctrl/⌘+V) tai valitse PNG/JPEG/WebP. Kuva ei poistu koneelta.">
+      <label class="filebtn primary" for="file">Valitse kuva</label>
+      <input id="file" class="sr-file" type="file" accept="image/*">
+      <label class="filebtn" for="camera">Kamera</label>
+      <input id="camera" class="sr-file" type="file" accept="image/*" capture="environment">
+      <button type="button" id="pasteBtn">Liitä</button>
+      <span class="sep"></span>
+      <label class="chk"><input type="checkbox" id="ocrOn" checked> Lue teksti (OCR)</label>
+      <select id="ocrLang" aria-label="OCR-kieli">
+        <option value="eng">englanti</option>
+        <option value="eng+fin">englanti + suomi</option>
+      </select>
+      <span class="hint" id="ocrState">Tesseract.js ladataan ensimmäisellä kerralla (~5 Mt). Kuva ei poistu koneelta.</span>
+    </div>
+    <button type="button" id="downloadJson" disabled>Lataa EVG JSON</button>
+  </header>
+
+  <aside class="left" aria-label="Tasot ja näytteet">
+    <div class="tabs" data-tabs="left">
+      <button type="button" data-tab="layers" class="on">Tasot</button>
+      <button type="button" data-tab="samples">Näytteet</button>
+    </div>
+    <div class="pane" data-pane="layers">
+      <ul class="layers" id="layers"><li class="muted">Liitä (Ctrl/⌘+V), pudota tai valitse kuvakaappaus — tunnistettu puu näkyy tässä.</li></ul>
+    </div>
+    <div class="pane" data-pane="samples" hidden>
+      <h3>Synteettinen 5×7-fixtuuri</h3>
+      <div class="actions">
+        <button type="button" id="formBtn">Lomake</button>
+        <button type="button" id="tabsBtn">Tabit</button>
+        <button type="button" id="menuBtn">Valikko</button>
+        <button type="button" id="iconBtn">Ikoni</button>
+        <button type="button" id="chipsBtn">Napit rivissä</button>
+        <button type="button" id="sliderBtn">Slider</button>
       </div>
-    </section>
-    <section style="margin-top:18px">
-      <div class="head">Tulos <span class="counts" id="counts"></span></div>
+      <h3>HTML-komponentit</h3>
+      <div class="actions">
+        <button type="button" data-png="login.png">Web-lomake</button>
+        <button type="button" data-png="settings.png">Asetukset</button>
+        <button type="button" data-png="tabs.png">HTML-tabit</button>
+        <button type="button" data-png="menu.png">HTML-valikko</button>
+        <button type="button" data-png="toolbar.png">Työkalupalkki</button>
+        <button type="button" data-png="dialog.png">Dialogi</button>
+        <button type="button" data-png="buttons.png">Napit</button>
+        <button type="button" data-png="nav.png">Sivupalkki</button>
+      </div>
+      <h3>shadcn/ui (dark zinc)</h3>
+      <div class="actions">
+        <button type="button" data-png="shadcn-dash.png">Dashboard</button>
+        <button type="button" data-png="shadcn-kit.png">Kit</button>
+        <button type="button" data-png="shadcn-nav.png">Nav</button>
+        <button type="button" data-png="shadcn-chart.png">Chart</button>
+        <button type="button" data-png="shadcn-balance.png">Saldo</button>
+      </div>
+      <p class="hint" style="margin-top:14px">Erazer etsii kuvakaappauksesta UI-elementit — laatikot, tekstit, napit, kentät, tabit, valikot, checkboxit ja ikonit — ja kirjoittaa niistä sisäkkäisen EVG-puun. Kuva ei poistu koneelta.</p>
+    </div>
+  </aside>
+
+  <main class="center" id="center">
+    <div class="tabs" data-tabs="view">
+      <button type="button" data-tab="detected" class="on">Tunnistettu</button>
+      <button type="button" data-tab="evg">EVG</button>
+      <span class="counts" id="counts"></span>
+    </div>
+    <div class="viewport" data-pane="detected">
+      <div class="stage overlay empty" id="stage">Liitä (Ctrl/⌘+V), pudota tai valitse kuvakaappaus.</div>
+    </div>
+    <div class="viewport" data-pane="evg" hidden>
+      <div class="stage canvas empty" id="rebuild" tabindex="0">EVG-puu piirretään tähän kuvan jälkeen.</div>
+    </div>
+    <div class="floatbar" id="floatbar">
+      <button type="button" data-z="-" aria-label="Loitonna">−</button>
+      <span class="zoomval">100%</span>
+      <button type="button" data-z="+" aria-label="Lähennä">+</button>
+      <button type="button" data-z="fit">Sovita</button>
+      <button type="button" data-z="1">1:1</button>
+      <span class="sep"></span>
+      <label>kuva <input id="srcOp" type="range" min="0" max="100" value="55" aria-label="Taustakuvan peittävyys"> <span id="srcOpVal">55%</span></label>
+    </div>
+  </main>
+
+  <aside class="right" aria-label="Ominaisuudet">
+    <div class="tabs" data-tabs="right">
+      <button type="button" data-tab="design" class="on">Design</button>
+      <button type="button" data-tab="raw">Raw</button>
+      <button type="button" data-tab="layout">Layout</button>
+    </div>
+    <div class="pane" data-pane="design">
+      <div class="inspector" id="inspector"><p class="muted">Klikkaa elementtiä kuvassa, EVG-näkymässä tai tasolistassa.</p></div>
+    </div>
+    <div class="pane" data-pane="raw" hidden>
+      <h3>Outline</h3>
       <pre id="outline">Ei vielä ajettu.</pre>
-    </section>
-    <section style="margin-top:18px">
-      <div class="head">Layout-verkko <span class="counts" id="layoutPicked">ei valintaa</span></div>
-      <div class="body">
-        <p class="hint">Klikkaa laatikoita kuvassa, anna nimi ja opeta — tai rakenna testsetti tunnetuista HTML-komponenteista: renderöi, nauhoita boksit, PNG, vektoroi Erazerilla. Kun näytteitä on tarpeeksi, kouluta pieni malli WebGPU:lla.</p>
-        <div class="concept" id="concepts">
-          <label><input type="radio" name="concept" value="list" checked> lista</label>
-          <label><input type="radio" name="concept" value="toolbar"> toolbar</label>
-          <label><input type="radio" name="concept" value="form"> lomake</label>
-          <label><input type="radio" name="concept" value="card"> kortti</label>
-          <label><input type="radio" name="concept" value="property_row"> property-rivi</label>
-          <label><input type="radio" name="concept" value="grid"> ruudukko</label>
-          <label><input type="radio" name="concept" value="nav"> nav</label>
-        </div>
-        <div class="actions">
-          <input id="newConcept" type="text" placeholder="uusi konsepti" autocomplete="off">
-          <button type="button" id="teachBtn" class="primary">Opeta valinta</button>
-          <button type="button" id="clearPickBtn">Tyhjennä valinta</button>
-        </div>
-        <p class="hint" style="margin-top:14px">Automaattinen testsetti + WebGPU</p>
-        <div class="actions">
-          <button type="button" id="buildSetBtn">Rakenna HTML-testsetti</button>
-          <button type="button" id="trainGpuBtn" disabled>Kouluta WebGPU:lla</button>
-          <button type="button" id="saveModelBtn">Tallenna malli</button>
-          <label class="filebtn" for="modelFile">Lataa malli</label>
-          <input id="modelFile" class="sr-file" type="file" accept=".txt,text/plain">
-        </div>
-        <pre id="layoutOut">Ei vielä ryhmiä.</pre>
-      </div>
-    </section>
-  </div>
-  <div>
-    <section>
-      <div class="head">Kuva + tunnistetut laatikot
-        <label class="op">tausta
-          <input id="srcOp" type="range" min="0" max="100" value="55" aria-label="Taustakuvan peittävyys">
-          <span id="srcOpVal">55%</span>
-        </label>
-      </div>
-      <div class="stage overlay empty" id="stage">Pudota tai liitä kuva tähän.</div>
-    </section>
-    <section style="margin-top:18px">
-      <div class="head">Rekonstruktio (EVG-puusta)
-        <span class="op"><button type="button" id="downloadJson" disabled>Lataa EVG JSON</button></span>
-      </div>
-      <div class="editor">
-        <div class="canvas-col">
-          <div class="zoombar" data-zoombar></div>
-          <div class="stage canvas empty" id="rebuild" tabindex="0">Ajetaan kuvan jälkeen.</div>
-          <div class="zoombar bottom" data-zoombar></div>
-        </div>
-        <aside class="inspector" id="inspector" aria-label="Ominaisuudet">
-          <p class="muted">Klikkaa elementtiä rekonstruktiossa nähdäksesi ja muokataksesi sen ominaisuuksia.</p>
-        </aside>
-      </div>
-    </section>
-    <section style="margin-top:18px">
-      <div class="head">EVG JSON</div>
+      <h3>EVG JSON</h3>
       <pre id="json"></pre>
-    </section>
-  </div>
-</main>
+    </div>
+    <div class="pane" data-pane="layout" hidden>
+      <h3>Layout-verkko <span class="counts" id="layoutPicked">ei valintaa</span></h3>
+      <p class="hint">Tällä välilehdellä kuvan laatikoiden klikkaus valitsee ne opetukseen: valitse laatikot, anna nimi ja opeta — tai rakenna testsetti HTML-komponenteista ja kouluta pieni malli WebGPU:lla.</p>
+      <div class="concept" id="concepts">
+        <label><input type="radio" name="concept" value="list" checked> lista</label>
+        <label><input type="radio" name="concept" value="toolbar"> toolbar</label>
+        <label><input type="radio" name="concept" value="form"> lomake</label>
+        <label><input type="radio" name="concept" value="card"> kortti</label>
+        <label><input type="radio" name="concept" value="property_row"> property-rivi</label>
+        <label><input type="radio" name="concept" value="grid"> ruudukko</label>
+        <label><input type="radio" name="concept" value="nav"> nav</label>
+      </div>
+      <div class="actions">
+        <input id="newConcept" type="text" placeholder="uusi konsepti" autocomplete="off">
+        <button type="button" id="teachBtn" class="primary">Opeta valinta</button>
+        <button type="button" id="clearPickBtn">Tyhjennä valinta</button>
+      </div>
+      <h3>Automaattinen testsetti + WebGPU</h3>
+      <div class="actions">
+        <button type="button" id="buildSetBtn">Rakenna HTML-testsetti</button>
+        <button type="button" id="trainGpuBtn" disabled>Kouluta WebGPU:lla</button>
+        <button type="button" id="saveModelBtn">Tallenna malli</button>
+        <label class="filebtn" for="modelFile">Lataa malli</label>
+        <input id="modelFile" class="sr-file" type="file" accept=".txt,text/plain">
+      </div>
+      <pre id="layoutOut" style="margin-top:8px">Ei vielä ryhmiä.</pre>
+    </div>
+  </aside>
+</div>
 <div id="captureHost" class="capture-host" aria-hidden="true"></div>
 <script src="erazer.js"></script>
 <script src="layout-lab.js"></script>
@@ -294,6 +311,9 @@
      analyser for every fixture. Without this flag the run log was wiped by
      each show() and the capture looked like it had done nothing. */
   var labBusy = false;
+  /* set by the editor below; show() calls them */
+  var sizeFrame = null;
+  var editorSelectById = null;
 
   var WEIGHTS_KEY = "erazer-layout-weights";
   try {
@@ -447,11 +467,14 @@
   }
   srcOp.addEventListener("input", applySourceOpacity);
 
+  var labMode = false;
   function show(img, doc) {
     stage.classList.remove("empty");
     stage.innerHTML = "";
     var frame = document.createElement("div");
     frame.className = "frame";
+    frame.setAttribute("data-w", String(img.width));
+    frame.setAttribute("data-h", String(img.height));
     var canvas = bufferToCanvas(img);
     canvas.style.opacity = sourceOpacity();
     frame.appendChild(canvas);
@@ -463,20 +486,24 @@
       svg.setAttribute("preserveAspectRatio", "none");
       svg.addEventListener("click", function (ev) {
         var el = ev.target;
-        if (!el || !el.getAttribute) return;
-        var id = el.getAttribute("data-box");
-        if (id == null) {
-          var p = el.closest && el.closest("[data-box]");
-          if (p) id = p.getAttribute("data-box");
-        }
-        if (id == null) return;
+        if (!el || !el.closest) return;
         ev.preventDefault();
-        if (picked[id]) delete picked[id];
-        else picked[id] = true;
-        paintPicks();
+        if (labMode) {
+          /* Layout tab open: the click picks boxes for teaching */
+          var pb = el.closest("[data-box]");
+          if (!pb) return;
+          var id = pb.getAttribute("data-box");
+          if (picked[id]) delete picked[id];
+          else picked[id] = true;
+          paintPicks();
+          return;
+        }
+        var hit = el.closest("[data-node]");
+        if (hit && editorSelectById) editorSelectById(hit.getAttribute("data-node"));
       });
     }
     stage.appendChild(frame);
+    if (sizeFrame) sizeFrame();
     lastDoc = doc;
     picked = {};
     outline.textContent = doc.outline || "(tyhjä)";
@@ -639,11 +666,40 @@
   }
   /* ---- Editor: zoom, selection, inspector, layers ------------------ */
   var inspector = document.getElementById("inspector");
+  var layersEl = document.getElementById("layers");
   var downloadJson = document.getElementById("downloadJson");
+  var appEl = document.querySelector(".app");
   var ROLES = ["page", "panel", "button", "textfield", "checkbox", "switch", "slider", "tab", "menu",
     "menuitem", "list", "listitem", "form", "label", "text", "icon", "shape", "underlay", "backdrop"];
-  var ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
-  var ed = { doc: null, zoom: 0, sel: null, parents: null, page: null, fit: 1 };
+  var ZOOMS = [0.1, 0.17, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
+  var ed = { doc: null, zoom: 0, sel: null, parents: null, byId: null, page: null, view: "detected" };
+
+  /* tabs: [data-tabs] bars switch the [data-pane] siblings of their column */
+  function openTab(group, name) {
+    var bar = document.querySelector('[data-tabs="' + group + '"]');
+    if (!bar) return;
+    bar.querySelectorAll("button[data-tab]").forEach(function (b) {
+      b.classList.toggle("on", b.getAttribute("data-tab") === name);
+    });
+    var col = bar.parentElement;
+    col.querySelectorAll(":scope > [data-pane]").forEach(function (p) {
+      p.hidden = p.getAttribute("data-pane") !== name;
+    });
+    if (group === "view") {
+      ed.view = name;
+      applyZoom();
+    }
+    if (group === "right") {
+      labMode = name === "layout";
+      appEl.classList.toggle("lab-mode", labMode);
+    }
+  }
+  document.querySelectorAll("[data-tabs]").forEach(function (bar) {
+    bar.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-tab]");
+      if (b) openTab(bar.getAttribute("data-tabs"), b.getAttribute("data-tab"));
+    });
+  });
 
   function roleOf(n) {
     var m = /erazer-([a-z]+)/.exec((n.props || {})["class-name"] || "");
@@ -663,57 +719,73 @@
     var n = parseInt(h.slice(1), 16);
     return "rgb(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + ")";
   }
-  function indexParents(n, parent, map) {
-    map.set(n, parent);
-    (n.children || []).forEach(function (c) { indexParents(c, n, map); });
-    return map;
-  }
-  function label(n) {
-    var r = roleOf(n), t = n.text || iconNameOf(n);
-    return r + (t ? " · " + t : "");
+  function reindex() {
+    ed.parents = new Map();
+    ed.byId = new Map();
+    (function walk(n, parent) {
+      ed.parents.set(n, parent);
+      if (n.id) ed.byId.set(n.id, n);
+      (n.children || []).forEach(function (c) { walk(c, n); });
+    })(ed.doc.root, null);
   }
 
-  function zoomText() {
-    return Math.round((ed.zoom || ed.fit) * 100) + "%";
+  /* ---- zoom: one level for both views, "fit" = the whole page visible */
+  function docSize() {
+    if (ed.doc) {
+      var p = ed.doc.root.props || {};
+      return { w: parseFloat(p.width) || 1, h: parseFloat(p.height) || 1 };
+    }
+    var fr = stage.querySelector(".frame");
+    if (fr && fr.getAttribute("data-w")) return { w: +fr.getAttribute("data-w"), h: +fr.getAttribute("data-h") };
+    return null;
   }
-  function setZoom(z) {
-    ed.zoom = z;
-    render();
+  function fitZoom() {
+    var sz = docSize();
+    var vp = document.querySelector('.viewport:not([hidden])');
+    if (!sz || !vp) return 1;
+    var aw = Math.max(120, vp.clientWidth - 64), ah = Math.max(120, vp.clientHeight - 128);
+    return Math.min(1, aw / sz.w, ah / sz.h);
   }
+  function curZoom() { return ed.zoom || fitZoom(); }
+  function applyZoom() {
+    document.querySelectorAll(".zoomval").forEach(function (z) { z.textContent = Math.round(curZoom() * 100) + "%"; });
+    if (ed.view === "evg") render();
+    else sizeFrame();
+  }
+  sizeFrame = function () {
+    var fr = stage.querySelector(".frame");
+    if (!fr || !fr.getAttribute("data-w")) return;
+    fr.style.width = Math.round(+fr.getAttribute("data-w") * curZoom()) + "px";
+    document.querySelectorAll(".zoomval").forEach(function (z) { z.textContent = Math.round(curZoom() * 100) + "%"; });
+  };
+  function setZoom(z) { ed.zoom = z; applyZoom(); }
   function stepZoom(dir) {
-    var cur = ed.zoom || ed.fit, next = cur;
+    var cur = curZoom(), next = cur;
     if (dir > 0) { for (var i = 0; i < ZOOMS.length; i++) if (ZOOMS[i] > cur + 1e-6) { next = ZOOMS[i]; break; } }
     else { for (var j = ZOOMS.length - 1; j >= 0; j--) if (ZOOMS[j] < cur - 1e-6) { next = ZOOMS[j]; break; } }
     setZoom(next);
   }
-  document.querySelectorAll("[data-zoombar]").forEach(function (bar) {
-    bar.innerHTML =
-      '<button type="button" data-z="-" aria-label="Loitonna">−</button>' +
-      '<span class="zoomval">100%</span>' +
-      '<button type="button" data-z="+" aria-label="Lähennä">+</button>' +
-      '<button type="button" data-z="fit">Sovita</button>' +
-      '<button type="button" data-z="1">1:1</button>';
-    bar.addEventListener("click", function (e) {
-      var b = e.target.closest("button[data-z]");
-      if (!b || !ed.doc) return;
-      var z = b.getAttribute("data-z");
-      if (z === "+") stepZoom(1);
-      else if (z === "-") stepZoom(-1);
-      else if (z === "fit") setZoom(0);
-      else setZoom(1);
-    });
+  document.getElementById("floatbar").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-z]");
+    if (!b) return;
+    var z = b.getAttribute("data-z");
+    if (z === "+") stepZoom(1);
+    else if (z === "-") stepZoom(-1);
+    else if (z === "fit") setZoom(0);
+    else setZoom(1);
   });
-  rebuildEl.addEventListener("wheel", function (e) {
-    if (!ed.doc || !(e.ctrlKey || e.metaKey)) return;
+  document.getElementById("center").addEventListener("wheel", function (e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     stepZoom(e.deltaY < 0 ? 1 : -1);
   }, { passive: false });
+  window.addEventListener("resize", function () { if (!ed.zoom) applyZoom(); });
 
+  /* ---- EVG view */
   function render() {
     if (!ed.doc) return;
     var root = ed.doc.root;
-    var W = parseFloat(root.props.width) || 1, H = parseFloat(root.props.height) || 1;
-    var keepX = rebuildEl.scrollLeft, keepY = rebuildEl.scrollTop;
+    var sz = docSize();
     rebuildEl.classList.remove("empty");
     rebuildEl.innerHTML = "";
     var page = buildNode(root);
@@ -721,18 +793,14 @@
     page.style.position = "relative";
     var holder = document.createElement("div");
     holder.style.position = "relative";
-    var avail = Math.max(200, rebuildEl.clientWidth - 32);
-    ed.fit = Math.min(1, avail / W);
-    var k = ed.zoom || ed.fit;
-    holder.style.width = Math.round(W * k) + "px";
-    holder.style.height = Math.round(H * k) + "px";
+    var k = curZoom();
+    holder.style.width = Math.round(sz.w * k) + "px";
+    holder.style.height = Math.round(sz.h * k) + "px";
     page.style.transform = "scale(" + k + ")";
     holder.appendChild(page);
     rebuildEl.appendChild(holder);
-    rebuildEl.scrollLeft = keepX;
-    rebuildEl.scrollTop = keepY;
     ed.page = page;
-    document.querySelectorAll(".zoomval").forEach(function (z) { z.textContent = zoomText(); });
+    document.querySelectorAll(".zoomval").forEach(function (z) { z.textContent = Math.round(k * 100) + "%"; });
     /* The page's own font is not the screenshot's (SF, Roboto): shrink a
        run that overflows its measured box instead of letting it spill. */
     page.querySelectorAll("span").forEach(function (sp) {
@@ -745,29 +813,47 @@
     markSelection();
   }
 
-  function elFor(n) {
-    var hit = null;
-    if (!ed.page || !n) return null;
-    if (ed.page.__node === n) return ed.page;
-    ed.page.querySelectorAll("[data-sel]").forEach(function (el) { if (el.__node === n) hit = el; });
-    return hit;
-  }
+  /* ---- selection, shared by the image, the EVG view and the layers */
   function markSelection() {
-    if (!ed.page) return;
-    ed.page.querySelectorAll(".is-selected").forEach(function (el) { el.classList.remove("is-selected"); });
-    var el = elFor(ed.sel);
-    if (el) el.classList.add("is-selected");
-  }
-  function commit() {
-    var text = JSON.stringify(ed.doc);
-    jsonEl.textContent = text;
-    render();
-    showInspector();
+    var id = ed.sel ? ed.sel.id : null;
+    if (ed.page) {
+      ed.page.querySelectorAll(".is-selected").forEach(function (el) { el.classList.remove("is-selected"); });
+      if (ed.sel) {
+        if (ed.page.__node === ed.sel) ed.page.classList.add("is-selected");
+        ed.page.querySelectorAll("[data-sel]").forEach(function (el) { if (el.__node === ed.sel) el.classList.add("is-selected"); });
+      }
+    }
+    stage.querySelectorAll("rect[data-node].sel").forEach(function (r) { r.classList.remove("sel"); });
+    if (id) {
+      var r2 = stage.querySelector('rect[data-node="' + id + '"]');
+      if (r2) r2.classList.add("sel");
+    }
+    layersEl.querySelectorAll("li.on").forEach(function (li) { li.classList.remove("on"); });
+    var li2 = id ? layersEl.querySelector('li[data-id="' + id + '"]') : null;
+    if (li2) {
+      li2.classList.add("on");
+      if (li2.scrollIntoView) li2.scrollIntoView({ block: "nearest" });
+    }
   }
   function select(n) {
     ed.sel = n;
     markSelection();
     showInspector();
+    if (n) openTab("right", "design");
+  }
+  editorSelectById = function (id) {
+    if (ed.byId && ed.byId.has(id)) select(ed.byId.get(id));
+  };
+  function commit() {
+    jsonEl.textContent = JSON.stringify(ed.doc);
+    render();
+    showLayers();
+    showInspector();
+    /* the image view keeps Erazer's boxes; a deleted node's box goes too */
+    stage.querySelectorAll("rect[data-node]").forEach(function (r) {
+      r.style.display = ed.byId.has(r.getAttribute("data-node")) ? "" : "none";
+    });
+    markSelection();
   }
 
   rebuildEl.addEventListener("click", function (e) {
@@ -785,8 +871,6 @@
     if (!ed.doc) return;
     var t = e.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
-    var inEditor = rebuildEl.contains(t) || inspector.contains(t) || t === document.body;
-    if (!inEditor) return;
     if ((e.key === "Delete" || e.key === "Backspace") && ed.sel) { e.preventDefault(); removeSelected(); }
     else if (e.key === "Escape") select(null);
     else if (e.key === "+" || e.key === "=") stepZoom(1);
@@ -800,7 +884,7 @@
     var parent = ed.parents.get(n);
     if (!parent) return;
     parent.children = (parent.children || []).filter(function (c) { return c !== n; });
-    ed.parents = indexParents(ed.doc.root, null, new Map());
+    reindex();
     ed.sel = parent;
     commit();
   }
@@ -826,24 +910,28 @@
     n.props = n.props || {};
     if (v === "" || v == null) delete n.props[k]; else n.props[k] = v;
   }
+  function heading(text) {
+    var h = document.createElement("h3");
+    h.textContent = text;
+    return h;
+  }
 
   function showInspector() {
     inspector.innerHTML = "";
     var n = ed.sel;
-    var head = document.createElement("h3");
     if (!n) {
-      head.textContent = "Ominaisuudet";
-      inspector.appendChild(head);
       var p0 = document.createElement("p");
       p0.className = "muted";
-      p0.textContent = "Klikkaa elementtiä rekonstruktiossa tai tasolistassa.";
+      p0.textContent = ed.doc
+        ? "Klikkaa elementtiä kuvassa, EVG-näkymässä tai tasolistassa."
+        : "Liitä, pudota tai valitse kuvakaappaus.";
       inspector.appendChild(p0);
-      showLayers();
       return;
     }
     var props = n.props || {};
-    head.textContent = label(n);
-    inspector.appendChild(head);
+    var title = document.createElement("h2");
+    title.textContent = roleOf(n) + (n.text ? " · " + n.text : "") + (iconNameOf(n) ? " · " + iconNameOf(n) : "");
+    inspector.appendChild(title);
 
     var role = document.createElement("select");
     ROLES.forEach(function (r) {
@@ -859,7 +947,6 @@
       commit();
     });
     inspector.appendChild(field("Tyyppi", role));
-
     if (n.tag === "span" || n.text) {
       inspector.appendChild(field("Teksti", textInput(n.text || "", function (v) { n.text = v; commit(); })));
     }
@@ -870,6 +957,7 @@
       inspector.appendChild(field("Ikoni", nm));
     }
 
+    inspector.appendChild(heading("Sijainti"));
     var geo = document.createElement("div");
     geo.className = "row four";
     [["left", "X"], ["top", "Y"], ["width", "L"], ["height", "K"]].forEach(function (kv) {
@@ -883,6 +971,7 @@
     });
     inspector.appendChild(geo);
 
+    inspector.appendChild(heading(n.tag === "span" ? "Teksti" : "Ulkoasu"));
     if (n.tag === "span") {
       inspector.appendChild(field("Fonttikoko", textInput(px(props["font-size"]), function (v) {
         setProp(n, "font-size", v === "" ? "" : (parseFloat(v) || 0) + "px"); commit();
@@ -915,7 +1004,6 @@
       var clear = document.createElement("button");
       clear.type = "button"; clear.textContent = "ei";
       clear.title = "Ei taustaväriä";
-      clear.style.padding = "2px 8px"; clear.style.minHeight = "0";
       clear.addEventListener("click", function () { setProp(n, "background-color", ""); commit(); });
       bgRow.appendChild(bg); bgRow.appendChild(clear);
       inspector.appendChild(field(props["background-color"] ? "Tausta" : "Tausta (ei)", bgRow));
@@ -939,28 +1027,25 @@
       acts.appendChild(del);
     }
     inspector.appendChild(acts);
-    showLayers();
   }
 
   function showLayers() {
-    var h = document.createElement("h3");
-    h.textContent = "Tasot";
-    inspector.appendChild(h);
-    var ul = document.createElement("ul");
-    ul.className = "layers";
+    layersEl.innerHTML = "";
+    if (!ed.doc) return;
     (function walk(n, depth) {
       if (n.tag === "path") return;
       var li = document.createElement("li");
-      li.style.paddingLeft = (4 + depth * 12) + "px";
-      li.textContent = label(n);
-      if (n === ed.sel) li.className = "on";
+      li.style.paddingLeft = (6 + depth * 12) + "px";
+      if (n.id) li.setAttribute("data-id", n.id);
+      var r = document.createElement("span");
+      r.className = "role";
+      r.textContent = roleOf(n);
+      li.appendChild(r);
+      li.appendChild(document.createTextNode(n.text || iconNameOf(n) || ""));
       li.addEventListener("click", function () { select(n); });
-      ul.appendChild(li);
+      layersEl.appendChild(li);
       (n.children || []).forEach(function (c) { walk(c, depth + 1); });
     })(ed.doc.root, 0);
-    inspector.appendChild(ul);
-    var on = ul.querySelector("li.on");
-    if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest" });
   }
 
   downloadJson.addEventListener("click", function () {
@@ -978,11 +1063,14 @@
     var parsed;
     try { parsed = JSON.parse(doc.json); } catch (e) { rebuildEl.textContent = "EVG JSON ei jäsenny"; return; }
     ed.doc = parsed;
-    ed.parents = indexParents(parsed.root, null, new Map());
+    reindex();
     ed.sel = null;
     ed.zoom = 0;
     downloadJson.disabled = false;
-    render();
+    showLayers();
+    openTab("left", "layers");
+    applyZoom();
+    if (ed.view !== "evg") render();
     showInspector();
   }
 
