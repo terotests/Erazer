@@ -2776,7 +2776,10 @@ class Erazer {
             el.color = (EVGColor.rgb(n.textR n.textG n.textB))
         } {
             def sameAsParent:boolean ((pr >= 0) && (n.gradDir < 0) && (this.colorNear(n.r n.g n.b pr pg pb 3)) && (n.role != "icon"))
-            if (sameAsParent == false) {
+            ; a traced icon is its paths: a box in its ink colour under them
+            ; drew every icon as a solid block
+            def traced:boolean ((n.role == "icon") && ((array_length n.iconPaths) > 0))
+            if ((sameAsParent == false) && (traced == false)) {
                 el.backgroundColor = (EVGColor.rgb(n.r n.g n.b))
             }
             if (n.gradDir >= 0) {
@@ -2790,7 +2793,7 @@ class Erazer {
                     ; text also lives on a child span
                 }
             }
-            if (n.radius > 0) {
+            if ((n.radius > 0) && (traced == false)) {
                 el.box.borderRadius = (EVGUnit.px((to_double n.radius)))
             }
             if (n.borderW > 0) {
@@ -2815,20 +2818,23 @@ class Erazer {
             def pathEl:EVGElement (EVGElement.createPath())
             pathEl.svgPath = (itemAt n.iconPaths p)
             pathEl.fillRule = "evenodd"
-            def fill:string (itemAt n.iconFills p)
-            pathEl.fillColor = (EVGColor.parse(fill))
+            ; the tracer fills its paths black; the icon's ink is n's colour
+            pathEl.fillColor = (EVGColor.rgb(n.r n.g n.b))
             def vw:int n.w
             def vh:int n.h
+            def off:int 0
             if (n.iconVw > 0) {
+                ; traced from a crop one pixel wider on every side
                 vw = n.iconVw
                 vh = n.iconVh
+                off = (idiv (vw - n.w) 2)
             }
             pathEl.viewBox = (("0 0 " + (to_string vw)) + " " + (to_string vh))
-            pathEl.width = (EVGUnit.px((to_double n.w)))
-            pathEl.height = (EVGUnit.px((to_double n.h)))
+            pathEl.width = (EVGUnit.px((to_double vw)))
+            pathEl.height = (EVGUnit.px((to_double vh)))
             pathEl.position = "absolute"
-            pathEl.left = (EVGUnit.px(0.0))
-            pathEl.top = (EVGUnit.px(0.0))
+            pathEl.left = (EVGUnit.px((to_double (0 - off))))
+            pathEl.top = (EVGUnit.px((to_double (0 - off))))
             el.addChild(pathEl)
             p = (p + 1)
         }

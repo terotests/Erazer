@@ -66,7 +66,8 @@ so a later pass can restyle it.
 ## Text from an outside OCR
 
 The built-in reader knows only the 5×7 test face. For a real screenshot
-the live page has **Lue teksti (OCR)**: it loads
+the live page has **Lue teksti (OCR)**, on by default (a viewer who
+turns it off keeps it off): it loads
 [Tesseract.js](https://github.com/naptha/tesseract.js) from jsDelivr on
 first use (about 5 MB, then cached by the browser), reads the image in the
 browser and hands the words to Erazer. The image still does not leave the
@@ -93,7 +94,10 @@ lines of a paragraph), otherwise the side of its container it hugs, or
 it (an icon's caption) is `center`.
 
 The page draws the EVG tree back as plain DOM under **Rekonstruktio**, so
-text, alignment, radii and gradients can be checked against the screenshot.
+text, alignment, radii, gradients and traced icons (inline SVG in the ink
+colour, the recogniser's name on hover) can be checked against the
+screenshot. When Tesseract.js cannot be loaded the run goes on without
+words.
 
 ## Icon names
 

@@ -142,7 +142,7 @@
           </div>
         </div>
         <div class="actions ocr-row">
-          <label><input type="checkbox" id="ocrOn"> Lue teksti (OCR)</label>
+          <label><input type="checkbox" id="ocrOn" checked> Lue teksti (OCR)</label>
           <select id="ocrLang" aria-label="OCR-kieli">
             <option value="eng">englanti</option>
             <option value="eng+fin">englanti + suomi</option>
@@ -463,7 +463,9 @@
   var ocrWorker = null;
   var ocrWorkerLang = "";
   try {
-    ocrOn.checked = localStorage.getItem("erazer.ocr") === "1";
+    // on unless the viewer turned it off: without it a real screenshot's
+    // text comes back as empty labels
+    ocrOn.checked = localStorage.getItem("erazer.ocr") !== "0";
     var savedLang = localStorage.getItem("erazer.ocrLang");
     if (savedLang) ocrLang.value = savedLang;
   } catch (e) {}
@@ -552,13 +554,37 @@
     }
     return st.join(";");
   }
+  var SVGNS = "http://www.w3.org/2000/svg";
+  // a traced icon's path: an absolutely placed <svg> with its own viewBox
+  function buildPath(n) {
+    var props = n.props || {};
+    var svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", props["view-box"] || "0 0 1 1");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("style", "position:absolute;overflow:visible;" +
+      ["left", "top", "width", "height"].filter(function (k) { return props[k] != null; })
+        .map(function (k) { return k + ":" + props[k]; }).join(";"));
+    var path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", props.d || "");
+    path.setAttribute("fill", props.fill || "currentColor");
+    if (props["fill-rule"]) path.setAttribute("fill-rule", props["fill-rule"]);
+    svg.appendChild(path);
+    return svg;
+  }
   function buildNode(n) {
     var el = document.createElement(n.tag === "span" ? "span" : "div");
     var props = n.props || {};
     el.setAttribute("style", cssOf(props));
-    if (props["class-name"]) el.className = props["class-name"];
+    if (props["class-name"]) {
+      el.className = props["class-name"];
+      // the recogniser's name, on hover
+      var named = /erazer-icon-([a-z0-9-]+)/.exec(props["class-name"]);
+      if (named) el.title = named[1];
+    }
     if (n.text) el.textContent = n.text;
-    (n.children || []).forEach(function (c) { if (c.tag !== "path") el.appendChild(buildNode(c)); });
+    (n.children || []).forEach(function (c) {
+      el.appendChild(c.tag === "path" ? buildPath(c) : buildNode(c));
+    });
     return el;
   }
   function showRebuild(doc) {
