@@ -100,11 +100,14 @@ text, alignment, radii and gradients can be checked against the screenshot.
 Each icon (and each "checkbox") is named by a small network in
 `ErazerIcons.rgr`: `home`, `settings`, `bell`, `user`, `chart`,
 `package`, `clipboard`, … 96 classes, one of them `none` (a bar, a disc,
-a swatch). A checkbox the network is at least 85% sure is some other icon
+a swatch). A checkbox the network is at least 85% sure is some other icon, and
+at least 14 px on both sides (a letter pair left as a checkbox is not),
 becomes an icon. A name is given at 80% or more
 (`ErazerOptions.iconMinConf`), and shows up as `name=bell 99%` in the
-outline, `icon bell` in the overlay and the class `erazer-icon-bell` in
-the EVG tree. `--nameIcons false` turns it off.
+outline, `icon bell` in the overlay, the class `erazer-icon-bell` in
+the EVG tree, and on the live page after the counts line's `icon N`
+(`(bell 99%, home 99%, …)`, or `ei tunnistettuja ikoneita` when none is
+named). `--nameIcons false` turns it off.
 
 The input is the icon's box as a 24×24 map of how much each cell is the
 icon's ink rather than the background around it, fitted into 20×20,

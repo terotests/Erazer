@@ -448,6 +448,11 @@
       " · row " + r.roleCount("listitem") +
       " · tab " + r.roleCount("tab") +
       " · icon " + r.roleCount("icon");
+    // the icon recogniser's names, as the outline carries them (name=bell 99%)
+    var named = String(doc.outline || "").match(/name=[a-z0-9-]+ \d+%/g) || [];
+    counts.textContent += named.length
+      ? " (" + named.map(function (s) { return s.slice(5); }).join(", ") + ")"
+      : " (ei tunnistettuja ikoneita)";
   }
 
   /* ---- OCR: Tesseract.js from jsDelivr, loaded on first use ---------- */

@@ -3705,7 +3705,9 @@ class Erazer {
             return
         }
         def boxy:boolean ((g.name == "checkbox") || (g.name == "square") || (g.name == "check") || (g.name == "check-circle") || (g.name == "circle") || (g.name == "none"))
-        if ((n.role == "checkbox") && (boxy == false) && (g.confidence >= 0.85)) {
+        ; a letter pair the reader left as a small "checkbox" ("ly" in
+        ; Analytics, 12×9) is not promoted: icons are bigger than text
+        if ((n.role == "checkbox") && (boxy == false) && (g.confidence >= 0.85) && (n.w >= 14) && (n.h >= 14)) {
             n.role = "icon"
             n.confidence = 0.7
             this.traceIcons(n)
