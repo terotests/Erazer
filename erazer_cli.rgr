@@ -170,6 +170,7 @@ class ErazerCli {
         print "  --scale <n>          analyse at 1/n size (default 0 = auto for 3x phone shots)"
         print "  --words <file.tsv>   words from an outside OCR: tesseract in.png out tsv"
         print "  --wordMinConf <n>    ignore words below this confidence (default 55)"
+        print "  --wordLowConf <n>    keep a word down to this on a text run found under it (default 25)"
         print "  --nameIcons          name icons with the Lucide-trained recogniser (default true)"
     }
 
@@ -207,6 +208,10 @@ class ErazerCli {
         }
         if (name == "wordMinConf") {
             o.wordMinConf = (ErazerCli.parseInt(value))
+            return true
+        }
+        if (name == "wordLowConf") {
+            o.wordLowConf = (ErazerCli.parseInt(value))
             return true
         }
         if (name == "scale") {

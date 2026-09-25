@@ -79,13 +79,20 @@ npm run erazer -- shot.png out.evg.json --words words.tsv --outline
 ```
 
 Each OCR line, split where a gap is wider than two word heights (the
-smaller of the two neighbouring words, so a word box that took in the icon
-above it does not join a row of captions), becomes
+smaller of the two neighbouring words, and at most 1.5 × the page's usual
+word height, so two captions whose boxes both took in the icons above them
+stay two), becomes
 a label in the smallest box that holds it. The region pass's runs and
 letter pieces under it go. A word inside a control (a switch knob read
 as "J"), a word mostly on a control (a tab icon read as "a"), a short
 word centred in a small badge (a chart glyph read as "all"), a lone tall
-character, and words under `--wordMinConf` (55) are dropped; a word box
+character, one character at the image edge (a frame's rounded corner),
+and words under `--wordMinConf` (55) are dropped — unless the word is at
+least `--wordLowConf` (25) and the region pass found a text run under it
+(Tesseract.js reads "Wed" at 38%). A word at 90%+ with three letters or
+more is text even where the region pass boxed its letters as a checkbox
+or icon; that box goes, and a checkbox under OCR text is never promoted
+to a named icon; a word box
 that reaches up into a control starts below it. The label's height comes from its ink, and its CSS `font-size`
 from that height and the letters it has (ascenders, descenders). Every
 label gets a `text-align`: an edge it shares with a sibling label (the

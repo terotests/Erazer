@@ -54,6 +54,9 @@ class ErazerOptions {
     def wordLine:[int]
     ; Words below this confidence (0–100) are ignored.
     def wordMinConf:int 55
+    ; a word between this and wordMinConf is kept on a text run the
+    ; region pass found under it
+    def wordLowConf:int 25
     ; Ignore the page-sized background as a widget; it still becomes the root.
     def skipFullBleed:boolean true
 

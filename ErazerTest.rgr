@@ -42,6 +42,7 @@ class ErazerTest {
         test.testCornersAndRows(t)
         test.testTextDoubt(t)
         test.testOutsideWords(t)
+        test.testCaptionWords(t)
         test.testJson(t)
         test.testLayoutFeatures(t)
         test.testLayoutLearn(t)
@@ -418,6 +419,39 @@ class ErazerTest {
             t.ok("font size is CSS-sized" (nc.fontSize > 14))
         }
         t.ok("alignment reaches the JSON" ((indexOf doc.json "\"text-align\":\"right\"") >= 0))
+    }
+
+    ; Captions whose word boxes both took in the icons above them, a word
+    ; OCR is unsure of on text the region pass found, and a frame corner
+    ; read as a letter.
+    fn testCaptionWords:void (t:RgTest) {
+        def img:ImageBuffer (ErazerPaint.blank(300 120 255 255 255))
+        ErazerPaint.paintLabel(img 20 80 "Orders")
+        ErazerPaint.paintLabel(img 150 80 "Stats")
+        ErazerPaint.paintLabel(img 20 20 "Wed")
+        ; ordinary words: they set the page's usual word height
+        ErazerPaint.paintLabel(img 90 20 "One")
+        ErazerPaint.paintLabel(img 140 20 "Two")
+        ErazerPaint.paintLabel(img 90 44 "Six")
+        def o:ErazerOptions (ErazerOptions.defaults())
+        this.wordAt(o "One" 90 20 5)
+        this.wordAt(o "Two" 140 20 5)
+        this.wordAt(o "Six" 90 44 6)
+        def wo:int (ErazerFont.textWidth("Orders" 2))
+        def ws:int (ErazerFont.textWidth("Stats" 2))
+        def ww:int (ErazerFont.textWidth("Wed" 2))
+        ; 40px tall over 14px letters, 60px apart, one OCR line
+        o.addLineWord("Orders" 20 54 wo 40 95 1)
+        o.addLineWord("Stats" 150 54 ws 40 95 1)
+        o.addLineWord("Wed" 20 20 ww 14 38 2)
+        o.addLineWord("Tue" 200 20 30 14 38 3)
+        o.addLineWord("A" 0 112 8 8 80 4)
+        def doc:ErazerDoc (Erazer.fromImageBuffer(img o))
+        def root:ErazerNode (unwrap doc.root)
+        t.ok("tall caption boxes stay two labels" (((null? (root.findText("Orders"))) == false) && ((null? (root.findText("Stats"))) == false)))
+        t.ok("a 38% word on found text is kept" ((null? (root.findText("Wed"))) == false))
+        t.ok("a 38% word on nothing is not" (null? (root.findText("Tue"))))
+        t.ok("a letter at the image edge is not text" (null? (root.findText("A"))))
     }
 
     fn testSliders:void (t:RgTest) {
