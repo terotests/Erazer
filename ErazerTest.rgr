@@ -182,6 +182,8 @@ class ErazerTest {
             def n:ErazerNode (unwrap hit)
             t.eqStr("the tree names the plus" n.iconName "plus")
             t.ok("outline carries the name" ((indexOf doc.outline "name=plus") >= 0))
+            t.ok("icon paths are drawn in the ink" ((indexOf doc.json "\"fill\":\"rgb(17,24,39)\"") >= 0))
+            t.ok("no black tracer fill" ((indexOf doc.json "\"fill\":\"rgb(0,0,0)\"") < 0))
         }
     }
 

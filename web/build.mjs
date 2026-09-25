@@ -9,6 +9,7 @@
  * browser IIFE and copies the HTML beside it.
  */
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,7 +83,16 @@ const scoped =
   "\n})();\n";
 
 fs.writeFileSync(path.join(OUT, "erazer.js"), scoped);
-fs.copyFileSync(path.join(HERE, "index.html"), path.join(OUT, "index.html"));
+// Each script is asked for by its content hash, so a browser that cached
+// the previous build (Pages allows 10 minutes) cannot run it against the
+// new page.
+const tag = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 10);
+const lab = fs.readFileSync(path.join(HERE, "layout-lab.js"), "utf8");
+const page = fs
+  .readFileSync(path.join(HERE, "index.html"), "utf8")
+  .replace('src="erazer.js"', `src="erazer.js?v=${tag(scoped)}"`)
+  .replace('src="layout-lab.js"', `src="layout-lab.js?v=${tag(lab)}"`);
+fs.writeFileSync(path.join(OUT, "index.html"), page);
 fs.copyFileSync(path.join(HERE, "layout-lab.js"), path.join(OUT, "layout-lab.js"));
 fs.copyFileSync(path.join(HERE, "components.html"), path.join(OUT, "components.html"));
 fs.copyFileSync(path.join(HERE, "shadcn.html"), path.join(OUT, "shadcn.html"));
