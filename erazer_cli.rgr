@@ -102,6 +102,9 @@ class ErazerCli {
         if (name == "vectorizeIcons") {
             return true
         }
+        if (name == "nameIcons") {
+            return true
+        }
         return false
     }
 
@@ -167,6 +170,7 @@ class ErazerCli {
         print "  --scale <n>          analyse at 1/n size (default 0 = auto for 3x phone shots)"
         print "  --words <file.tsv>   words from an outside OCR: tesseract in.png out tsv"
         print "  --wordMinConf <n>    ignore words below this confidence (default 55)"
+        print "  --nameIcons          name icons with the Lucide-trained recogniser (default true)"
     }
 
     fn applyOption:boolean (o:ErazerOptions name:string value:string) {
@@ -176,6 +180,10 @@ class ErazerCli {
         }
         if (name == "vectorizeIcons") {
             o.vectorizeIcons = (ErazerCli.parseBool(value))
+            return true
+        }
+        if (name == "nameIcons") {
+            o.nameIcons = (ErazerCli.parseBool(value))
             return true
         }
         if (name == "colorTol") {

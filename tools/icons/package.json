@@ -1,0 +1,16 @@
+{
+  "name": "erazer-icon-trainer",
+  "private": true,
+  "type": "module",
+  "description": "Trains Erazer's icon recogniser from Lucide SVGs; writes ../../ErazerIconWeights.rgr",
+  "scripts": {
+    "train": "node train.mjs"
+  },
+  "devDependencies": {
+    "@material-design-icons/svg": "^0.14.15",
+    "@material-symbols/svg-400": "^0.47.5",
+    "@resvg/resvg-js": "^2.6.2",
+    "lucide-static": "^0.460.0",
+    "pngjs": "^7.0.0"
+  }
+}

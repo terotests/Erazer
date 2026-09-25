@@ -16,6 +16,7 @@ Import "Erazer.rgr"
 Import "ErazerPaint.rgr"
 Import "ErazerFont.rgr"
 Import "ErazerLayout.rgr"
+Import "ErazerIcons.rgr"
 Import "../game_engine/v2/tests/harness/RgTest.rgr"
 
 class ErazerTest {
@@ -31,6 +32,7 @@ class ErazerTest {
         test.testTabs(t)
         test.testMenu(t)
         test.testIcon(t)
+        test.testIconNames(t)
         test.testChipRow(t)
         test.testChipStrip(t)
         test.testSlider(t)
@@ -158,6 +160,29 @@ class ErazerTest {
         }
         def add@(optional):ErazerNode (doc.root.findText("Add"))
         t.ok("icon row reads Add" ((null? add) == false))
+    }
+
+    fn testIconNames:void (t:RgTest) {
+        def net:ErazerIcons (ErazerIcons.shared())
+        t.eqInt("recogniser decodes its first layer" (array_length net.w1) (((net.side * net.side) + net.nf) * net.hid))
+        t.eqInt("one output bias per class" (array_length net.b2) (array_length net.names))
+        def img:ImageBuffer (ErazerPaint.iconRow())
+        def x:[double] (net.input(img 20 20 20 20 17 24 39))
+        t.eqInt("input is side × side" (array_length x) (net.side * net.side))
+        def flat:ImageBuffer (ErazerPaint.blank(40 40 255 255 255))
+        t.eqInt("no ink, no input" (array_length (net.input(flat 10 10 20 20 250 250 250))) 0)
+        t.eqInt("map and features" (array_length (net.fullInput(img 20 20 20 20 17 24 39))) ((net.side * net.side) + net.nf))
+        def g:ErazerIconGuess (net.classify(img 20 20 20 20 17 24 39))
+        t.eqStr("painted plus is a plus" g.name "plus")
+        def doc:ErazerDoc (Erazer.analyze(img))
+        def hit@(optional):ErazerNode (doc.root.findRole("icon"))
+        if (null? hit) {
+            t.ok("plus is found" false)
+        } {
+            def n:ErazerNode (unwrap hit)
+            t.eqStr("the tree names the plus" n.iconName "plus")
+            t.ok("outline carries the name" ((indexOf doc.outline "name=plus") >= 0))
+        }
     }
 
     fn testChipRow:void (t:RgTest) {

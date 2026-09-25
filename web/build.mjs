@@ -78,6 +78,7 @@ const scoped =
   "\n;globalThis.ErazerLayoutBox = ErazerLayoutBox;" +
   "\n;globalThis.ErazerLayoutFeat = ErazerLayoutFeat;" +
   "\n;globalThis.ImageBuffer = ImageBuffer;" +
+  "\n;globalThis.ErazerIcons = ErazerIcons;" +
   "\n})();\n";
 
 fs.writeFileSync(path.join(OUT, "erazer.js"), scoped);

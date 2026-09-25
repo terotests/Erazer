@@ -31,6 +31,10 @@ class ErazerOptions {
     def ocr:boolean true
     ; Trace leftover small pictorial regions with EvgBitmapTracer.
     def vectorizeIcons:boolean true
+    ; name icons with the recogniser (ErazerIcons), and the share below
+    ; which a name is not given
+    def nameIcons:boolean true
+    def iconMinConf:double 0.8
     def iconMin:int 10
     def iconMax:int 56
     ; Analyse at 1/scale of the input, then report input coordinates. The
@@ -238,6 +242,9 @@ class ErazerNode {
     def textG:int 0
     def textB:int 0
     def iconSvg:string ""
+    ; what the icon recogniser calls it (ErazerIcons), "" = no confident name
+    def iconName:string ""
+    def iconConf:double 0.0
     def iconPaths:[string]
     def iconFills:[string]
     ; Size the icon was traced at (its viewBox); 0 = the node's own size.
