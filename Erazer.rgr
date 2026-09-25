@@ -17,6 +17,7 @@
 Import "ErazerTypes.rgr"
 Import "ErazerFont.rgr"
 Import "ErazerLayout.rgr"
+Import "ErazerIcons.rgr"
 Import "pkg:evg/EvgBitmapTracer.rgr"
 Import "pkg:evg/EVGTreeJson.rgr"
 Import "pkg:image/ImageBuffer.rgr"
@@ -2801,6 +2802,9 @@ class Erazer {
             el.textAlign = n.align
         }
         el.className = ("erazer-" + n.role)
+        if ((strlen n.iconName) > 0) {
+            el.className = ((el.className + " erazer-icon-") + n.iconName)
+        }
         el.position = "absolute"
         el.left = (EVGUnit.px((to_double (n.x - px))))
         el.top = (EVGUnit.px((to_double (n.y - py))))
@@ -2858,6 +2862,9 @@ class Erazer {
         }
         if ((strlen n.iconSvg) > 0) {
             line = (line + " icon=svg")
+        }
+        if ((strlen n.iconName) > 0) {
+            line = ((((line + " name=") + n.iconName) + " ") + (to_string (floor (n.iconConf * 100.0)))) + "%")
         }
         if (((strlen n.align) > 0) && (n.align != "left")) {
             line = ((line + " align=") + n.align)
@@ -3013,6 +3020,9 @@ class Erazer {
             s = (s + "stroke=\"" + col + "\" stroke-width=\"1\"/>")
         }
         def lab:string n.role
+        if ((strlen n.iconName) > 0) {
+            lab = ((lab + " ") + n.iconName)
+        }
         if ((strlen n.text) > 0) {
             lab = ((lab + " ") + n.text)
         }
@@ -3676,6 +3686,36 @@ class Erazer {
         }
     }
 
+    ; Names each icon with the recogniser. A "checkbox" the recogniser is
+    ; sure is some other icon (a gear, a bell) becomes an icon too.
+    fn nameIcons:void (n:ErazerNode net:ErazerIcons) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.nameIcons((itemAt n.kids i) net)
+            i = (i + 1)
+        }
+        if ((n.role != "icon") && (n.role != "checkbox")) {
+            return
+        }
+        if ((n.w < 8) || (n.h < 8)) {
+            return
+        }
+        def g:ErazerIconGuess (net.classify(img n.x n.y n.w n.h n.r n.g n.b))
+        if ((strlen g.name) == 0) {
+            return
+        }
+        def boxy:boolean ((g.name == "checkbox") || (g.name == "square") || (g.name == "check") || (g.name == "check-circle") || (g.name == "circle") || (g.name == "none"))
+        if ((n.role == "checkbox") && (boxy == false) && (g.confidence >= 0.85)) {
+            n.role = "icon"
+            n.confidence = 0.7
+            this.traceIcons(n)
+        }
+        if ((n.role == "icon") && (g.name != "none") && (g.confidence >= opts.iconMinConf)) {
+            n.iconName = g.name
+            n.iconConf = g.confidence
+        }
+    }
+
     ; Nothing but its own fill inside the box: a chart bar or a swatch,
     ; where an icon shows the background through its strokes.
     fn solidBox:boolean (n:ErazerNode) {
@@ -3886,6 +3926,9 @@ class Erazer {
         def texts2:[ErazerNode]
         this.collectTexts(page texts2)
         this.iconsFromCheckboxes(page page texts2)
+        if opts.nameIcons {
+            this.nameIcons(page (ErazerIcons.shared()))
+        }
         this.alignTexts(page)
         def boxes:[ErazerLayoutBox] (ErazerLayoutNet.boxesFromTree(page w h))
         def net:ErazerLayoutNet (ErazerLayoutNet.shared())

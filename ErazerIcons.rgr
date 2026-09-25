@@ -1,0 +1,609 @@
+; Erazer icon recogniser: names a traced icon (home, settings, bell, …).
+;
+; A (576 + features) → hidden → classes network trained by
+; tools/icons/train.mjs on Lucide and Material Symbols icons drawn outlined
+; and filled at many sizes and colours. The input is a 24×24 map of how
+; much each pixel is the icon's ink rather than the background around it
+; (the box fitted into 20×20 in the middle), followed by shape features of
+; that map: 4×4 fill, symmetry, centre of gravity and spread, straight
+; lines, bands, box aspect, ink share, pieces, holes, stroke thickness.
+; tools/icons/prep.mjs computes the same input for training; the two must
+; stay the same.
+;
+; License: AGPL-3.0-or-later. The weights come from Lucide (ISC), see
+; ErazerIconWeights.rgr.
+
+Import "ErazerIconWeights.rgr"
+
+class ErazerIconGuess {
+    def name:string ""
+    def confidence:double 0.0
+    ; the class after it and its share
+    def second:string ""
+    def secondConfidence:double 0.0
+
+    Constructor () {
+    }
+}
+
+class ErazerIcons @singleton(true) {
+    def ready:boolean false
+    def names:[string]
+    def side:int 24
+    def nf:int 0
+    def hid:int 0
+    def w1:[double]
+    def b1:[double]
+    def w2:[double]
+    def b2:[double]
+
+    Constructor () {
+    }
+
+    sfn shared:ErazerIcons () {
+        def one:ErazerIcons (ErazerIcons.__singleton())
+        one.load()
+        return one
+    }
+
+    fn decode:[double] (parts:[string] scale:double) {
+        def out:[double]
+        def alpha:string (ErazerIconWeights.alphabet())
+        ; character code → 0..63
+        def lut:[int]
+        def c:int 0
+        while (c < 128) {
+            push lut 0
+            c = (c + 1)
+        }
+        def a:int 0
+        while (a < (strlen alpha)) {
+            set lut (charAt alpha a) a
+            a = (a + 1)
+        }
+        def p:int 0
+        while (p < (array_length parts)) {
+            def s:string (itemAt parts p)
+            def n:int (strlen s)
+            def i:int 0
+            while ((i + 1) < n) {
+                def hi:int (itemAt lut (charAt s i))
+                def lo:int (itemAt lut (charAt s (i + 1)))
+                def q:int (((hi * 64) + lo) - 2048)
+                push out ((to_double q) * scale)
+                i = (i + 2)
+            }
+            p = (p + 1)
+        }
+        return out
+    }
+
+    fn load:void () {
+        if ready {
+            return
+        }
+        names = (ErazerIconWeights.names())
+        side = (ErazerIconWeights.inputSide())
+        nf = (ErazerIconWeights.features())
+        hid = (ErazerIconWeights.hidden())
+        w1 = (this.decode((ErazerIconWeights.w1Text()) (ErazerIconWeights.w1Scale())))
+        b1 = (this.decode((ErazerIconWeights.b1Text()) (ErazerIconWeights.b1Scale())))
+        w2 = (this.decode((ErazerIconWeights.w2Text()) (ErazerIconWeights.w2Scale())))
+        b2 = (this.decode((ErazerIconWeights.b2Text()) (ErazerIconWeights.b2Scale())))
+        ready = true
+    }
+
+    fn clamp01:double (v:double) {
+        if (v < 0.0) {
+            return 0.0
+        }
+        if (v > 1.0) {
+            return 1.0
+        }
+        return v
+    }
+
+    ; The 24×24 inkiness map of box (x, y, w, h) with ink (ir, ig, ib), or
+    ; an empty list when the ink is too close to the background.
+    fn input:[double] (img:ImageBuffer x:int y:int w:int h:int ir:int ig:int ib:int) {
+        def out:[double]
+        def W:int img.width
+        def H:int img.height
+        def pixels:buffer img.pixels
+        ; background: mean of the 1px ring just outside the box
+        def br:int 0
+        def bgs:int 0
+        def bb:int 0
+        def cnt:int 0
+        def px:int (x - 1)
+        while (px <= (x + w)) {
+            def e:int 0
+            while (e < 2) {
+                def py:int (y - 1)
+                if (e == 1) {
+                    py = (y + h)
+                }
+                if ((px >= 0) && (py >= 0) && (px < W) && (py < H)) {
+                    def o:int (((py * W) + px) * 4)
+                    br = (br + (buffer_get pixels o))
+                    bgs = (bgs + (buffer_get pixels (o + 1)))
+                    bb = (bb + (buffer_get pixels (o + 2)))
+                    cnt = (cnt + 1)
+                }
+                e = (e + 1)
+            }
+            px = (px + 1)
+        }
+        def qy:int y
+        while (qy < (y + h)) {
+            def f:int 0
+            while (f < 2) {
+                def qx:int (x - 1)
+                if (f == 1) {
+                    qx = (x + w)
+                }
+                if ((qx >= 0) && (qy >= 0) && (qx < W) && (qy < H)) {
+                    def o2:int (((qy * W) + qx) * 4)
+                    br = (br + (buffer_get pixels o2))
+                    bgs = (bgs + (buffer_get pixels (o2 + 1)))
+                    bb = (bb + (buffer_get pixels (o2 + 2)))
+                    cnt = (cnt + 1)
+                }
+                f = (f + 1)
+            }
+            qy = (qy + 1)
+        }
+        if (cnt == 0) {
+            return out
+        }
+        br = (idiv br cnt)
+        bgs = (idiv bgs cnt)
+        bb = (idiv bb cnt)
+        def dr:int (ir - br)
+        def dg:int (ig - bgs)
+        def db:int (ib - bb)
+        def dd:int (((dr * dr) + (dg * dg)) + (db * db))
+        if (dd < 400) {
+            return out
+        }
+        def ddd:double (to_double dd)
+        def big:int w
+        if (h > big) {
+            big = h
+        }
+        def s:double ((to_double big) / ((to_double side) - 4.0))
+        def half:double ((to_double side) / 2.0)
+        def ox:double (((to_double x) + ((to_double w) / 2.0)) - (half * s))
+        def oy:double (((to_double y) + ((to_double h) / 2.0)) - (half * s))
+        def v:int 0
+        while (v < side) {
+            def u:int 0
+            while (u < side) {
+                def acc:double 0.0
+                def j:int 0
+                while (j < 3) {
+                    def i:int 0
+                    while (i < 3) {
+                        def sx:int (floor (ox + (((to_double u) + (((to_double i) + 0.5) / 3.0)) * s)))
+                        def sy:int (floor (oy + (((to_double v) + (((to_double j) + 0.5) / 3.0)) * s)))
+                        if ((sx >= x) && (sy >= y) && (sx < (x + w)) && (sy < (y + h)) && (sx < W) && (sy < H)) {
+                            def o3:int (((sy * W) + sx) * 4)
+                            def t:double ((to_double (((((buffer_get pixels o3) - br) * dr) + (((buffer_get pixels (o3 + 1)) - bgs) * dg)) + (((buffer_get pixels (o3 + 2)) - bb) * db))) / ddd)
+                            acc = (acc + (this.clamp01(t)))
+                        }
+                        i = (i + 1)
+                    }
+                    j = (j + 1)
+                }
+                push out (acc / 9.0)
+                u = (u + 1)
+            }
+            v = (v + 1)
+        }
+        return out
+    }
+
+    fn onAt:boolean (m:[double] x:int y:int) {
+        if ((x < 0) || (y < 0) || (x >= side) || (y >= side)) {
+            return false
+        }
+        return ((itemAt m ((y * side) + x)) >= 0.5)
+    }
+
+    fn capShare:double (n:int cap:int) {
+        if (n > cap) {
+            return 1.0
+        }
+        return ((to_double n) / (to_double cap))
+    }
+
+    ; straight lines: a run of 8+ ink cells; touching rows are one line
+    fn lineCount:double (m:[double] horiz:boolean) {
+        def count:int 0
+        def prev:boolean false
+        def a:int 0
+        while (a < side) {
+            def run:int 0
+            def best:int 0
+            def b:int 0
+            while (b < side) {
+                def hit:boolean false
+                if horiz {
+                    hit = (this.onAt(m b a))
+                } {
+                    hit = (this.onAt(m a b))
+                }
+                if hit {
+                    run = (run + 1)
+                    if (run > best) {
+                        best = run
+                    }
+                } {
+                    run = 0
+                }
+                b = (b + 1)
+            }
+            def has:boolean (best >= 8)
+            if (has && (prev == false)) {
+                count = (count + 1)
+            }
+            prev = has
+            a = (a + 1)
+        }
+        return (this.capShare(count 6))
+    }
+
+    ; bands of ink split by empty rows (horiz) or empty columns
+    fn bandCount:double (m:[double] horiz:boolean) {
+        def count:int 0
+        def prev:boolean false
+        def a:int 0
+        while (a < side) {
+            def any:boolean false
+            def b:int 0
+            while (b < side) {
+                if horiz {
+                    if (this.onAt(m b a)) {
+                        any = true
+                    }
+                } {
+                    if (this.onAt(m a b)) {
+                        any = true
+                    }
+                }
+                b = (b + 1)
+            }
+            if (any && (prev == false)) {
+                count = (count + 1)
+            }
+            prev = any
+            a = (a + 1)
+        }
+        return (this.capShare(count 6))
+    }
+
+    ; The shape features after the map, in tools/icons/prep.mjs's order.
+    fn features:[double] (m:[double] aspect:double) {
+        def f:[double]
+        def n:int side
+        def gy:int 0
+        while (gy < 4) {
+            def gx:int 0
+            while (gx < 4) {
+                def s:double 0.0
+                def y:int 0
+                while (y < 5) {
+                    def x:int 0
+                    while (x < 5) {
+                        s = (s + (itemAt m ((((2 + (gy * 5)) + y) * n) + ((2 + (gx * 5)) + x))))
+                        x = (x + 1)
+                    }
+                    y = (y + 1)
+                }
+                push f (s / 25.0)
+                gx = (gx + 1)
+            }
+            gy = (gy + 1)
+        }
+        def dh:double 0.0
+        def sh:double 0.0
+        def dv:double 0.0
+        def sv:double 0.0
+        def tot:double 0.0
+        def mx:double 0.0
+        def my:double 0.0
+        def yy:int 0
+        while (yy < n) {
+            def xx:int 0
+            while (xx < n) {
+                def a:double (itemAt m ((yy * n) + xx))
+                def b:double (itemAt m ((yy * n) + ((n - 1) - xx)))
+                def c:double (itemAt m ((((n - 1) - yy) * n) + xx))
+                def d1:double (a - b)
+                if (d1 < 0.0) {
+                    d1 = (0.0 - d1)
+                }
+                def d2:double (a - c)
+                if (d2 < 0.0) {
+                    d2 = (0.0 - d2)
+                }
+                dh = (dh + d1)
+                sh = ((sh + a) + b)
+                dv = (dv + d2)
+                sv = ((sv + a) + c)
+                tot = (tot + a)
+                mx = (mx + (a * (to_double xx)))
+                my = (my + (a * (to_double yy)))
+                xx = (xx + 1)
+            }
+            yy = (yy + 1)
+        }
+        if (sh > 0.0) {
+            push f (1.0 - (dh / sh))
+        } {
+            push f 0.0
+        }
+        if (sv > 0.0) {
+            push f (1.0 - (dv / sv))
+        } {
+            push f 0.0
+        }
+        def cx:double 11.5
+        def cy:double 11.5
+        if (tot > 0.0) {
+            cx = (mx / tot)
+            cy = (my / tot)
+        }
+        def vx:double 0.0
+        def vy:double 0.0
+        def y2:int 0
+        while (y2 < n) {
+            def x2:int 0
+            while (x2 < n) {
+                def a2:double (itemAt m ((y2 * n) + x2))
+                def ex:double ((to_double x2) - cx)
+                def ey:double ((to_double y2) - cy)
+                vx = (vx + ((a2 * ex) * ex))
+                vy = (vy + ((a2 * ey) * ey))
+                x2 = (x2 + 1)
+            }
+            y2 = (y2 + 1)
+        }
+        push f (cx / (to_double (n - 1)))
+        push f (cy / (to_double (n - 1)))
+        if (tot > 0.0) {
+            def spx:double ((sqrt (vx / tot)) / 8.0)
+            def spy:double ((sqrt (vy / tot)) / 8.0)
+            if (spx > 1.0) {
+                spx = 1.0
+            }
+            if (spy > 1.0) {
+                spy = 1.0
+            }
+            push f spx
+            push f spy
+        } {
+            push f 0.0
+            push f 0.0
+        }
+        push f (this.lineCount(m true))
+        push f (this.lineCount(m false))
+        push f (this.bandCount(m true))
+        push f (this.bandCount(m false))
+        push f aspect
+        push f (tot / (to_double (n * n)))
+        ; pieces of ink, and holes: background regions that do not reach
+        ; the edge (4-connected flood fill)
+        def seen:[int]
+        def z:int 0
+        while (z < (n * n)) {
+            push seen 0
+            z = (z + 1)
+        }
+        def pieces:int 0
+        def holes:int 0
+        def st:int 0
+        while (st < (n * n)) {
+            if ((itemAt seen st) == 0) {
+                def ink:boolean ((itemAt m st) >= 0.5)
+                def edge:boolean false
+                def stack:[int]
+                push stack st
+                set seen st 1
+                while ((array_length stack) > 0) {
+                    def p:int (itemAt stack ((array_length stack) - 1))
+                    removeLast stack
+                    def px:int (p % n)
+                    def py:int (idiv (p - px) n)
+                    if ((px == 0) || (py == 0) || (px == (n - 1)) || (py == (n - 1))) {
+                        edge = true
+                    }
+                    def k:int 0
+                    while (k < 4) {
+                        def nx:int px
+                        def ny:int py
+                        if (k == 0) {
+                            nx = (px + 1)
+                        }
+                        if (k == 1) {
+                            nx = (px - 1)
+                        }
+                        if (k == 2) {
+                            ny = (py + 1)
+                        }
+                        if (k == 3) {
+                            ny = (py - 1)
+                        }
+                        if ((nx >= 0) && (ny >= 0) && (nx < n) && (ny < n)) {
+                            def q:int ((ny * n) + nx)
+                            if (((itemAt seen q) == 0) && (((itemAt m q) >= 0.5) == ink)) {
+                                set seen q 1
+                                push stack q
+                            }
+                        }
+                        k = (k + 1)
+                    }
+                }
+                if ink {
+                    pieces = (pieces + 1)
+                } {
+                    if (edge == false) {
+                        holes = (holes + 1)
+                    }
+                }
+            }
+            st = (st + 1)
+        }
+        push f (this.capShare(pieces 6))
+        push f (this.capShare(holes 4))
+        ; stroke thickness: ink cells per ink cell on the outline
+        def area:int 0
+        def rim:int 0
+        def y3:int 0
+        while (y3 < n) {
+            def x3:int 0
+            while (x3 < n) {
+                if (this.onAt(m x3 y3)) {
+                    area = (area + 1)
+                    if (((this.onAt(m (x3 + 1) y3)) == false) || ((this.onAt(m (x3 - 1) y3)) == false) || ((this.onAt(m x3 (y3 + 1))) == false) || ((this.onAt(m x3 (y3 - 1))) == false)) {
+                        rim = (rim + 1)
+                    }
+                }
+                x3 = (x3 + 1)
+            }
+            y3 = (y3 + 1)
+        }
+        if (rim > 0) {
+            def th:double (((to_double area) / (to_double rim)) / 4.0)
+            if (th > 1.0) {
+                th = 1.0
+            }
+            push f th
+        } {
+            push f 0.0
+        }
+        return f
+    }
+
+    ; map followed by features; empty when there is no ink to read
+    fn fullInput:[double] (img:ImageBuffer x:int y:int w:int h:int ir:int ig:int ib:int) {
+        def m:[double] (this.input(img x y w h ir ig ib))
+        if ((array_length m) == 0) {
+            return m
+        }
+        def f:[double] (this.features(m ((to_double w) / (to_double (w + h)))))
+        def i:int 0
+        while (i < (array_length f)) {
+            push m (itemAt f i)
+            i = (i + 1)
+        }
+        return m
+    }
+
+    fn expD:double (x:double) {
+        def v:double x
+        def invert:boolean false
+        if (v < 0.0) {
+            invert = true
+            v = (0.0 - v)
+        }
+        if (v > 30.0) {
+            v = 30.0
+        }
+        ; e^v = (e^(v/32))^32; the series converges fast on the small part
+        def r:double (v / 32.0)
+        def term:double 1.0
+        def sum:double 1.0
+        def n:int 1
+        while (n < 12) {
+            term = ((term * r) / (to_double n))
+            sum = (sum + term)
+            n = (n + 1)
+        }
+        def k:int 0
+        while (k < 5) {
+            sum = (sum * sum)
+            k = (k + 1)
+        }
+        if invert {
+            return (1.0 / sum)
+        }
+        return sum
+    }
+
+    fn classifyInput:ErazerIconGuess (x:[double]) {
+        def g (new ErazerIconGuess())
+        def nIn:int ((side * side) + nf)
+        if ((array_length x) != nIn) {
+            return g
+        }
+        def hv:[double]
+        def j:int 0
+        while (j < hid) {
+            def sum:double (itemAt b1 j)
+            def row:int (j * nIn)
+            def i:int 0
+            while (i < nIn) {
+                sum = (sum + ((itemAt w1 (row + i)) * (itemAt x i)))
+                i = (i + 1)
+            }
+            if (sum < 0.0) {
+                sum = 0.0
+            }
+            push hv sum
+            j = (j + 1)
+        }
+        def nc:int (array_length names)
+        def zs:[double]
+        def mx:double (0.0 - 1000000.0)
+        def c:int 0
+        while (c < nc) {
+            def z:double (itemAt b2 c)
+            def row2:int (c * hid)
+            def q:int 0
+            while (q < hid) {
+                z = (z + ((itemAt w2 (row2 + q)) * (itemAt hv q)))
+                q = (q + 1)
+            }
+            push zs z
+            if (z > mx) {
+                mx = z
+            }
+            c = (c + 1)
+        }
+        def tot:double 0.0
+        def ps:[double]
+        def d:int 0
+        while (d < nc) {
+            def e:double (this.expD(((itemAt zs d) - mx)))
+            push ps e
+            tot = (tot + e)
+            d = (d + 1)
+        }
+        def best:int 0
+        def next:int (0 - 1)
+        def b:int 1
+        while (b < nc) {
+            if ((itemAt ps b) > (itemAt ps best)) {
+                next = best
+                best = b
+            } {
+                if ((next < 0) || ((itemAt ps b) > (itemAt ps next))) {
+                    next = b
+                }
+            }
+            b = (b + 1)
+        }
+        g.name = (itemAt names best)
+        g.confidence = ((itemAt ps best) / tot)
+        if (next >= 0) {
+            g.second = (itemAt names next)
+            g.secondConfidence = ((itemAt ps next) / tot)
+        }
+        return g
+    }
+
+    fn classify:ErazerIconGuess (img:ImageBuffer x:int y:int w:int h:int ir:int ig:int ib:int) {
+        return (this.classifyInput((this.fullInput(img x y w h ir ig ib))))
+    }
+}
