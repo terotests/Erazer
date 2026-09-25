@@ -1,0 +1,90 @@
+# Build the Erazer live page and deploy it to GitHub Pages
+# (https://terotests.github.io/Erazer/).
+#
+# Erazer is Ranger source. The compiler (dist/rgrc.js) is committed in the
+# Ranger repository, so no `npm ci` and no compiler build is needed: a sparse,
+# shallow checkout of the parts the build reads is enough, and this repository
+# is placed at gallery/erazer inside it, where the scripts expect to be.
+name: Deploy Erazer to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ranger_ref:
+        description: "Ranger branch, tag or commit to build with"
+        required: false
+        default: ""
+
+env:
+  RANGER_REF: ${{ inputs.ranger_ref || 'master' }}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Ranger (compiler + libraries)
+        uses: actions/checkout@v4
+        with:
+          repository: terotests/Ranger
+          ref: ${{ env.RANGER_REF }}
+          path: ranger
+          fetch-depth: 1
+          sparse-checkout: |
+            compiler
+            lib
+            dist
+            scripts/rgr-suite.sh
+            gallery/game_engine/v2/tests/harness
+
+      - name: Checkout Erazer
+        uses: actions/checkout@v4
+        with:
+          path: ranger/gallery/erazer
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test
+        working-directory: ranger
+        run: bash scripts/rgr-suite.sh ./gallery/erazer/ErazerTest.rgr ./gallery/erazer/bin ErazerTest.js
+
+      - name: Build the live page
+        working-directory: ranger
+        run: node gallery/erazer/web/build.mjs --out "$GITHUB_WORKSPACE/_site"
+
+      - name: Smoke test the bundle
+        working-directory: ranger
+        run: node gallery/erazer/web/smoke.mjs "$GITHUB_WORKSPACE/_site"
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

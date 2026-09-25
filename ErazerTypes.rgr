@@ -1,0 +1,298 @@
+; SPDX-License-Identifier: AGPL-3.0-or-later
+
+; ==============================================================================
+; ErazerTypes.rgr — bitmap → EVG UI layout: shared types
+; ==============================================================================
+;
+; Erazer is the UI counterpart of EvgBitmapTracer. The tracer follows ink as
+; a photograph; this one looks for nested rectangles, text runs, form controls
+; and icons, and emits an EVG tree whose class names are the guessed widgets.
+; ==============================================================================
+
+class ErazerOptions {
+    ; Per-channel max delta for a pixel to join a region.
+    def colorTol:int 20
+    ; A region seeded inside a flat surface takes pixels within surfaceTol
+    ; of the seed, tighter than colorTol so a white card on an off-white
+    ; page (a 10–15 step) stays its own region. Past that it may drift up to
+    ; surfaceDrift from the seed one surfaceStep at a time over flat pixels,
+    ; so a blurred or gradient backdrop (iOS frosted glass) is one surface.
+    def surfaceTol:int 8
+    def surfaceStep:int 4
+    def surfaceDrift:int 96
+    ; Components up to this many pixels that touch each other are one mark:
+    ; anti-aliased glyphs arrive as a core, grey fringes and a counter hole.
+    def fragArea:int 400
+    ; Drop connected components smaller than this (noise / AA specks).
+    def minArea:int 5
+    def minGlyphH:int 6
+    def maxGlyphH:int 42
+    ; Read characters with the built-in 5×7 atlas when a run looks like text.
+    def ocr:boolean true
+    ; Trace leftover small pictorial regions with EvgBitmapTracer.
+    def vectorizeIcons:boolean true
+    def iconMin:int 10
+    def iconMax:int 56
+    ; Analyse at 1/scale of the input, then report input coordinates. The
+    ; thresholds above are in CSS pixels; a 3x phone screenshot has 51px
+    ; body text and 93px switches. 0 = auto: a portrait image wider than
+    ; 900px is taken as a phone screenshot at round(width / 390)x.
+    def scale:int 0
+    ; Ignore the page-sized background as a widget; it still becomes the root.
+    def skipFullBleed:boolean true
+
+    Constructor () {
+    }
+
+    sfn defaults:ErazerOptions () {
+        def o (new ErazerOptions())
+        return o
+    }
+}
+
+; One connected component before it is promoted to a layout node.
+class ErazerRaw {
+    def x:int 0
+    def y:int 0
+    def w:int 0
+    def h:int 0
+    def area:int 0
+    def r:int 0
+    def g:int 0
+    def b:int 0
+    def radius:int 0
+    ; "glyph" | "box" | "frame" | "line" | "icon"
+    def kind:string "box"
+    def used:boolean false
+    ; How many touching fragments were joined into this component.
+    def parts:int 1
+    ; Grown from a flat seed with surfaceTol (a surface, not ink or an edge).
+    def surface:boolean false
+    ; A surface whose colour runs one way across its box: -1 none,
+    ; 0 top to bottom, 1 left to right. From/to are the box's two ends.
+    def gradDir:int -1
+    def gFromR:int 0
+    def gFromG:int 0
+    def gFromB:int 0
+    def gToR:int 0
+    def gToG:int 0
+    def gToB:int 0
+
+    Constructor () {
+    }
+
+    fn fillRatio:double () {
+        def box:int (w * h)
+        if (box <= 0) {
+            return 0.0
+        }
+        return ((to_double area) / (to_double box))
+    }
+
+    fn cx:int () {
+        return (x + (idiv w 2))
+    }
+
+    fn cy:int () {
+        return (y + (idiv h 2))
+    }
+
+    fn maxX:int () {
+        return (x + w)
+    }
+
+    fn maxY:int () {
+        return (y + h)
+    }
+
+    fn nearSquare:boolean () {
+        def d:int (w - h)
+        if (d < 0) {
+            d = (0 - d)
+        }
+        def m:int w
+        if (h > m) {
+            m = h
+        }
+        if (m < 8) {
+            return false
+        }
+        return (d <= 4)
+    }
+}
+
+class ErazerNode {
+    ; page | panel | form | button | textfield | checkbox | label | text
+    ; tab | tablist | menu | menuitem | icon | image | slider | sliderthumb
+    def role:string "panel"
+    def x:int 0
+    def y:int 0
+    def w:int 0
+    def h:int 0
+    def r:int 255
+    def g:int 255
+    def b:int 255
+    def radius:int 0
+    def borderR:int 0
+    def borderG:int 0
+    def borderB:int 0
+    def borderW:int 0
+    def text:string ""
+    def fontSize:int 0
+    def textR:int 0
+    def textG:int 0
+    def textB:int 0
+    def iconSvg:string ""
+    def iconPaths:[string]
+    def iconFills:[string]
+    ; Size the icon was traced at (its viewBox); 0 = the node's own size.
+    def iconVw:int 0
+    def iconVh:int 0
+    def confidence:double 0.5
+    ; Share of the bounding box the region really covers (1 for text).
+    def fill:double 1.0
+    ; Two-stop background: -1 none, 0 vertical, 1 horizontal (EVG gradient-dir).
+    def gradDir:int -1
+    def gFromR:int 0
+    def gFromG:int 0
+    def gFromB:int 0
+    def gToR:int 0
+    def gToG:int 0
+    def gToB:int 0
+    ; 1-based id when this node is a layout primitive; 0 means not collected.
+    def boxId:int 0
+    def kids:[ErazerNode]
+
+    Constructor () {
+        def k:[ErazerNode]
+        kids = k
+        def p:[string]
+        iconPaths = p
+        def f:[string]
+        iconFills = f
+    }
+
+    sfn of:ErazerNode (role:string x:int y:int w:int h:int r:int g:int b:int) {
+        def n (new ErazerNode())
+        n.role = role
+        n.x = x
+        n.y = y
+        n.w = w
+        n.h = h
+        n.r = r
+        n.g = g
+        n.b = b
+        return n
+    }
+
+    fn addKid:void (kid:ErazerNode) {
+        push kids kid
+    }
+
+    fn maxX:int () {
+        return (x + w)
+    }
+
+    fn maxY:int () {
+        return (y + h)
+    }
+
+    fn cx:int () {
+        return (x + (idiv w 2))
+    }
+
+    fn cy:int () {
+        return (y + (idiv h 2))
+    }
+
+    fn coversBox:boolean (ox:int oy:int ow:int oh:int) {
+        if (ox < x) {
+            return false
+        }
+        if (oy < y) {
+            return false
+        }
+        if ((ox + ow) > (x + w)) {
+            return false
+        }
+        if ((oy + oh) > (y + h)) {
+            return false
+        }
+        return true
+    }
+
+    fn roleCount:int (want:string) {
+        def n:int 0
+        if (role == want) {
+            n = 1
+        }
+        def i:int 0
+        while (i < (array_length kids)) {
+            def k:ErazerNode (itemAt kids i)
+            n = (n + (k.roleCount(want)))
+            i = (i + 1)
+        }
+        return n
+    }
+
+    fn findRole@(optional):ErazerNode (want:string) {
+        if (role == want) {
+            def selfHit@(optional):ErazerNode this
+            return selfHit
+        }
+        def i:int 0
+        while (i < (array_length kids)) {
+            def k:ErazerNode (itemAt kids i)
+            def hit@(optional):ErazerNode (k.findRole(want))
+            if hit {
+                return hit
+            }
+            i = (i + 1)
+        }
+        def miss@(optional):ErazerNode
+        return miss
+    }
+
+    fn findText@(optional):ErazerNode (want:string) {
+        if (text == want) {
+            def selfHit@(optional):ErazerNode this
+            return selfHit
+        }
+        def i:int 0
+        while (i < (array_length kids)) {
+            def k:ErazerNode (itemAt kids i)
+            def hit@(optional):ErazerNode (k.findText(want))
+            if hit {
+                return hit
+            }
+            i = (i + 1)
+        }
+        def miss@(optional):ErazerNode
+        return miss
+    }
+
+    fn collectRoles:void (out:[string]) {
+        push out role
+        def i:int 0
+        while (i < (array_length kids)) {
+            def k:ErazerNode (itemAt kids i)
+            k.collectRoles(out)
+            i = (i + 1)
+        }
+    }
+}
+
+class ErazerDoc {
+    def width:int 0
+    def height:int 0
+    def root:ErazerNode
+    def json:string ""
+    def overlaySvg:string ""
+    def outline:string ""
+    ; Geometry-layout groups ranked by the small MLP (not pixel-CNN).
+    def layoutJson:string ""
+
+    Constructor () {
+        root = (ErazerNode.of("page" 0 0 1 1 255 255 255))
+    }
+}
