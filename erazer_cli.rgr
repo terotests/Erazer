@@ -165,6 +165,8 @@ class ErazerCli {
         print "  --surfaceTol <n>     tolerance for regions grown from a flat seed (default 8)"
         print "  --surfaceDrift <n>   how far a surface may drift over a gradient (default 96, 0 = off)"
         print "  --scale <n>          analyse at 1/n size (default 0 = auto for 3x phone shots)"
+        print "  --words <file.tsv>   words from an outside OCR: tesseract in.png out tsv"
+        print "  --wordMinConf <n>    ignore words below this confidence (default 55)"
     }
 
     fn applyOption:boolean (o:ErazerOptions name:string value:string) {
@@ -178,6 +180,25 @@ class ErazerCli {
         }
         if (name == "colorTol") {
             o.colorTol = (ErazerCli.parseInt(value))
+            return true
+        }
+        if (name == "words") {
+            def dir:string (ErazerCli.dirOf(value))
+            def file:string (ErazerCli.fileOf(value))
+            if ((file_exists dir file) == false) {
+                print ("no such file: " + value)
+                return false
+            }
+            def txt@(optional):string (read_file dir file)
+            if (null? txt) {
+                return false
+            }
+            def got:int (o.addTesseractTsv((unwrap txt)))
+            print (("  words=" + (to_string got)) + " from " + value)
+            return true
+        }
+        if (name == "wordMinConf") {
+            o.wordMinConf = (ErazerCli.parseInt(value))
             return true
         }
         if (name == "scale") {

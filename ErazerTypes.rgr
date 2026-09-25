@@ -38,10 +38,98 @@ class ErazerOptions {
     ; body text and 93px switches. 0 = auto: a portrait image wider than
     ; 900px is taken as a phone screenshot at round(width / 390)x.
     def scale:int 0
+    ; Words from an outside OCR (Tesseract, the browser), in input pixels.
+    ; They replace the 5×7 reading, and a word no run covers becomes a label.
+    def wordText:[string]
+    def wordX:[int]
+    def wordY:[int]
+    def wordW:[int]
+    def wordH:[int]
+    def wordConf:[int]
+    ; OCR line id per word (-1: group by geometry)
+    def wordLine:[int]
+    ; Words below this confidence (0–100) are ignored.
+    def wordMinConf:int 55
     ; Ignore the page-sized background as a widget; it still becomes the root.
     def skipFullBleed:boolean true
 
     Constructor () {
+        def t:[string]
+        wordText = t
+        def a:[int]
+        wordX = a
+        def b:[int]
+        wordY = b
+        def c:[int]
+        wordW = c
+        def d:[int]
+        wordH = d
+        def e:[int]
+        wordConf = e
+        def f:[int]
+        wordLine = f
+    }
+
+    fn addWord:void (text:string x:int y:int w:int h:int conf:int) {
+        this.addLineWord(text x y w h conf (0 - 1))
+    }
+
+    fn addLineWord:void (text:string x:int y:int w:int h:int conf:int line:int) {
+        push wordLine line
+        push wordText text
+        push wordX x
+        push wordY y
+        push wordW w
+        push wordH h
+        push wordConf conf
+    }
+
+    fn wordCount:int () {
+        return (array_length wordText)
+    }
+
+    ; `tesseract in.png out tsv` output: level … left top width height conf
+    ; text, one word per level-5 row.
+    fn addTesseractTsv:int (tsv:string) {
+        def lines:[string] (strsplit tsv "\n")
+        def added:int 0
+        def i:int 0
+        while (i < (array_length lines)) {
+            def cols:[string] (strsplit (itemAt lines i) "\t")
+            if ((array_length cols) >= 12) {
+                if ((itemAt cols 0) == "5") {
+                    def text:string (itemAt cols 11)
+                    def cr:int (indexOf text "\r")
+                    if (cr >= 0) {
+                        text = (substring text 0 cr)
+                    }
+                    if ((strlen text) > 0) {
+                        def lineId:int ((((ErazerOptions.intOf((itemAt cols 2))) * 10000) + ((ErazerOptions.intOf((itemAt cols 3))) * 100)) + (ErazerOptions.intOf((itemAt cols 4))))
+                        this.addLineWord(text (ErazerOptions.intOf((itemAt cols 6))) (ErazerOptions.intOf((itemAt cols 7))) (ErazerOptions.intOf((itemAt cols 8))) (ErazerOptions.intOf((itemAt cols 9))) (ErazerOptions.intOf((itemAt cols 10))) lineId)
+                        added = (added + 1)
+                    }
+                }
+            }
+            i = (i + 1)
+        }
+        return added
+    }
+
+    ; Leading digits of s; "96.5" is 96, "-1" is 0.
+    sfn intOf:int (s:string) {
+        def v:int 0
+        def i:int 0
+        def go:boolean true
+        while (go && (i < (strlen s))) {
+            def d:int (indexOf "0123456789" (substring s i (i + 1)))
+            if (d < 0) {
+                go = false
+            } {
+                v = ((v * 10) + d)
+            }
+            i = (i + 1)
+        }
+        return v
     }
 
     sfn defaults:ErazerOptions () {
@@ -138,6 +226,13 @@ class ErazerNode {
     def borderB:int 0
     def borderW:int 0
     def text:string ""
+    ; left | center | right: where a label sits in its container
+    def align:string ""
+    ; the text came from an outside OCR
+    def ocrText:boolean false
+    ; left and right edge of the ink inside an OCR label
+    def inkX0:int 0
+    def inkX1:int 0
     def fontSize:int 0
     def textR:int 0
     def textG:int 0
@@ -162,10 +257,14 @@ class ErazerNode {
     ; 1-based id when this node is a layout primitive; 0 means not collected.
     def boxId:int 0
     def kids:[ErazerNode]
+    ; outside-OCR words assigned to this run (indices into the options)
+    def words:[int]
 
     Constructor () {
         def k:[ErazerNode]
         kids = k
+        def wd:[int]
+        words = wd
         def p:[string]
         iconPaths = p
         def f:[string]

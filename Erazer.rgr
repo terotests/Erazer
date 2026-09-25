@@ -2797,6 +2797,9 @@ class Erazer {
                 el.box.borderColor = (EVGColor.rgb(n.borderR n.borderG n.borderB))
             }
         }
+        if ((strlen n.align) > 0) {
+            el.textAlign = n.align
+        }
         el.className = ("erazer-" + n.role)
         el.position = "absolute"
         el.left = (EVGUnit.px((to_double (n.x - px))))
@@ -2855,6 +2858,9 @@ class Erazer {
         }
         if ((strlen n.iconSvg) > 0) {
             line = (line + " icon=svg")
+        }
+        if (((strlen n.align) > 0) && (n.align != "left")) {
+            line = ((line + " align=") + n.align)
         }
         if (n.radius > 0) {
             line = ((line + " r=") + (to_string n.radius))
@@ -3094,10 +3100,562 @@ class Erazer {
         }
     }
 
+    ; ---- outside OCR ---------------------------------------------------
+
+    fn isTextRole:boolean (n:ErazerNode) {
+        return ((n.role == "text") || (n.role == "label") || (n.role == "shape"))
+    }
+
+    ; The smallest non-text box that holds the whole rectangle.
+    fn containerFor:ErazerNode (n:ErazerNode x:int y:int w:int h:int) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if (((this.isTextRole(k)) == false) && (k.role != "underlay") && (k.role != "backdrop") && (k.coversBox(x y w h))) {
+                return (this.containerFor(k x y w h))
+            }
+            i = (i + 1)
+        }
+        return n
+    }
+
+    fn wordOk:boolean (i:int) {
+        if ((itemAt opts.wordConf i) < opts.wordMinConf) {
+            return false
+        }
+        if ((this.wordChars((itemAt opts.wordText i))) == 0) {
+            return false
+        }
+        if (((itemAt opts.wordW i) <= 0) || ((itemAt opts.wordH i) <= 0)) {
+            return false
+        }
+        return true
+    }
+
+    ; Word indices in reading order: by line (tops within half a height),
+    ; then left to right.
+    fn sortWords:void (ids:[int]) {
+        def n:int (array_length ids)
+        def i:int 1
+        while (i < n) {
+            def j:int i
+            def go:boolean true
+            while (go && (j > 0)) {
+                def a:int (itemAt ids j)
+                def b:int (itemAt ids (j - 1))
+                def ay:int (itemAt opts.wordY a)
+                def by:int (itemAt opts.wordY b)
+                def half:int (idiv (this.maxI((itemAt opts.wordH a) (itemAt opts.wordH b))) 2)
+                def before:boolean false
+                if (ay < (by - half)) {
+                    before = true
+                } {
+                    if (((this.absI((ay - by))) <= half) && ((itemAt opts.wordX a) < (itemAt opts.wordX b))) {
+                        before = true
+                    }
+                }
+                if before {
+                    set ids j b
+                    set ids (j - 1) a
+                    j = (j - 1)
+                } {
+                    go = false
+                }
+            }
+            i = (i + 1)
+        }
+    }
+
+    fn sortWordsByX:void (ids:[int]) {
+        def n:int (array_length ids)
+        def i:int 1
+        while (i < n) {
+            def j:int i
+            while ((j > 0) && ((itemAt opts.wordX (itemAt ids j)) < (itemAt opts.wordX (itemAt ids (j - 1))))) {
+                def t:int (itemAt ids j)
+                set ids j (itemAt ids (j - 1))
+                set ids (j - 1) t
+                j = (j - 1)
+            }
+            i = (i + 1)
+        }
+    }
+
+    fn labelOfWords:ErazerNode (line:[int]) {
+        def lx:int 100000
+        def ly:int 100000
+        def lmx:int 0
+        def lmy:int 0
+        def hs:[int]
+        def q:int 0
+        while (q < (array_length line)) {
+            def wid:int (itemAt line q)
+            lx = (this.minI(lx (itemAt opts.wordX wid)))
+            ly = (this.minI(ly (itemAt opts.wordY wid)))
+            lmx = (this.maxI(lmx ((itemAt opts.wordX wid) + (itemAt opts.wordW wid))))
+            lmy = (this.maxI(lmy ((itemAt opts.wordY wid) + (itemAt opts.wordH wid))))
+            push hs (itemAt opts.wordH wid)
+            q = (q + 1)
+        }
+        ; a word box far taller than the line's (Tesseract gave "to" 30px
+        ; on a 13px line) sets only the horizontal extent
+        def med:int (this.medianInt(hs))
+        def ty:int 100000
+        def tmy:int 0
+        def t:int 0
+        while (t < (array_length line)) {
+            def tid:int (itemAt line t)
+            if (((itemAt opts.wordH tid) * 10) <= (med * 14)) {
+                ty = (this.minI(ty (itemAt opts.wordY tid)))
+                tmy = (this.maxI(tmy ((itemAt opts.wordY tid) + (itemAt opts.wordH tid))))
+            }
+            t = (t + 1)
+        }
+        if (tmy > ty) {
+            ly = ty
+            lmy = tmy
+        }
+        def lab:ErazerNode (ErazerNode.of("label" lx ly (lmx - lx) (lmy - ly) 0 0 0))
+        lab.words = line
+        lab.text = (this.joinWords(line))
+        lab.ocrText = true
+        lab.fontSize = (this.medianInt(hs))
+        lab.confidence = 0.8
+        return lab
+    }
+
+    ; After the ink box tightened the label, a word left outside it was
+    ; not this ink (the blue tick read as "v" beside "WiFi").
+    fn keepInkWords:void (lab:ErazerNode) {
+        def kept:[int]
+        def i:int 0
+        while (i < (array_length lab.words)) {
+            def id:int (itemAt lab.words i)
+            def wn:ErazerNode (ErazerNode.of("label" (itemAt opts.wordX id) (itemAt opts.wordY id) (itemAt opts.wordW id) (itemAt opts.wordH id) 0 0 0))
+            def inside:boolean true
+            if ((lab.inkX1 > lab.inkX0) && ((strlen (itemAt opts.wordText id)) <= 1)) {
+                inside = (((wn.maxX()) > lab.inkX0) && (wn.x < lab.inkX1))
+            }
+            if inside {
+                push kept id
+            }
+            i = (i + 1)
+        }
+        if (((array_length kept) > 0) && ((array_length kept) < (array_length lab.words))) {
+            lab.words = kept
+            lab.text = (this.joinWords(kept))
+            def x0:int 100000
+            def x1:int 0
+            def j:int 0
+            while (j < (array_length kept)) {
+                def kid:int (itemAt kept j)
+                x0 = (this.minI(x0 (itemAt opts.wordX kid)))
+                x1 = (this.maxI(x1 ((itemAt opts.wordX kid) + (itemAt opts.wordW kid))))
+                j = (j + 1)
+            }
+            lab.x = x0
+            lab.w = (x1 - x0)
+        }
+        lab.fontSize = (this.cssFontOf(lab.text lab.h))
+    }
+
+    ; CSS font-size from the ink height of a known string. Ink from the
+    ; top of an ascender to the foot of a descender is about 0.95 em; to
+    ; the baseline (capitals, b d f h k l t) about 0.72 em; x-height only
+    ; about 0.52 em.
+    fn cssFontOf:int (text:string inkH:int) {
+        def up:boolean false
+        def down:boolean false
+        def i:int 0
+        while (i < (strlen text)) {
+            def ch:string (substring text i (i + 1))
+            if ((indexOf "ABCDEFGHIJKLMNOPQRSTUVWXYZbdfhklt0123456789" ch) >= 0) {
+                up = true
+            }
+            if ((indexOf "gjpqy" ch) >= 0) {
+                down = true
+            }
+            i = (i + 1)
+        }
+        def k:int 52
+        if (up && down) {
+            k = 95
+        } {
+            if up {
+                k = 72
+            } {
+                if down {
+                    k = 74
+                }
+            }
+        }
+        return (idiv ((inkH * 100) + (idiv k 2)) k)
+    }
+
+    fn joinWords:string (ids:[int]) {
+        def out:string ""
+        def i:int 0
+        while (i < (array_length ids)) {
+            if (i > 0) {
+                out = (out + " ")
+            }
+            out = (out + (itemAt opts.wordText (itemAt ids i)))
+            i = (i + 1)
+        }
+        return out
+    }
+
+    ; Mean of the pixels in the box that stand out most from bg: the ink.
+    fn inkIn:void (n:ErazerNode bg:int) {
+        def maxd:int 0
+        def y:int n.y
+        while (y < (n.maxY())) {
+            def x:int n.x
+            while (x < (n.maxX())) {
+                def l:int (this.lumaAt(x y))
+                if (l >= 0) {
+                    def d:int (this.absI((l - bg)))
+                    if (d > maxd) {
+                        maxd = d
+                    }
+                }
+                x = (x + 1)
+            }
+            y = (y + 1)
+        }
+        def sr:int 0
+        def sg:int 0
+        def sb:int 0
+        def cnt:int 0
+        def ix0:int 100000
+        def iy0:int 100000
+        def ix1:int (0 - 1)
+        def iy1:int (0 - 1)
+        def y2:int n.y
+        while (y2 < (n.maxY())) {
+            def x2:int n.x
+            while (x2 < (n.maxX())) {
+                if (img.isValidCoord(x2 y2)) {
+                    def c:Color (img.getPixel(x2 y2))
+                    def d2:int (this.absI(((this.lumaOf(c.r c.g c.b)) - bg)))
+                    if (((d2 * 10) >= (maxd * 6)) && (maxd >= 24)) {
+                        ix0 = (this.minI(ix0 x2))
+                        iy0 = (this.minI(iy0 y2))
+                        ix1 = (this.maxI(ix1 x2))
+                        iy1 = (this.maxI(iy1 y2))
+                        sr = (sr + c.r)
+                        sg = (sg + c.g)
+                        sb = (sb + c.b)
+                        cnt = (cnt + 1)
+                    }
+                }
+                x2 = (x2 + 1)
+            }
+            y2 = (y2 + 1)
+        }
+        ; OCR boxes run loose: the ink's rows are the label's height, and
+        ; that height the glyph size.
+        if ((cnt > 0) && (iy1 >= iy0)) {
+            n.y = iy0
+            n.h = ((iy1 - iy0) + 1)
+            n.fontSize = n.h
+        }
+        if ((cnt > 0) && (ix1 >= ix0)) {
+            n.inkX0 = ix0
+            n.inkX1 = (ix1 + 1)
+        }
+        if (cnt > 0) {
+            n.textR = (idiv sr cnt)
+            n.textG = (idiv sg cnt)
+            n.textB = (idiv sb cnt)
+            n.r = n.textR
+            n.g = n.textG
+            n.b = n.textB
+        }
+    }
+
+    ; Pieces of letters the region pass kept as boxes (a bold title's
+    ; strokes as panels, an O as a checkbox) go when a label covers them.
+    fn dropCovered:void (c:ErazerNode lab:ErazerNode) {
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length c.kids)) {
+            def k:ErazerNode (itemAt c.kids i)
+            def inside:boolean ((k.x >= (lab.x - 2)) && (k.y >= (lab.y - 2)) && ((k.maxX()) <= ((lab.maxX()) + 2)) && ((k.maxY()) <= ((lab.maxY()) + 2)))
+            if ((k != lab) && inside && (k.h <= (lab.h + 4))) {
+                ; gone
+            } {
+                push keep k
+            }
+            i = (i + 1)
+        }
+        c.kids = keep
+    }
+
+    fn isControl:boolean (n:ErazerNode) {
+        return ((n.role == "switch") || (n.role == "checkbox") || (n.role == "slider") || (n.role == "sliderthumb") || (n.role == "icon"))
+    }
+
+    ; Text runs mostly inside the rectangle go: the OCR line replaces them.
+    fn dropRunsIn:void (n:ErazerNode lab:ErazerNode) {
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            def gone:boolean false
+            if ((k != lab) && (this.isTextRole(k)) && ((k.w * k.h) > 0)) {
+                if (((this.overlapArea(k lab)) * 2) >= (k.w * k.h)) {
+                    gone = true
+                }
+            }
+            if (gone == false) {
+                push keep k
+                this.dropRunsIn(k lab)
+            }
+            i = (i + 1)
+        }
+        n.kids = keep
+    }
+
+    ; Leaves the region pass made out of letters: a box with nothing in it
+    ; that OCR labels cover for the most part (the strokes of a bold title,
+    ; a "button" spanning two lines of a paragraph).
+    fn dropLetterJunk:void (n:ErazerNode labs:[ErazerNode]) {
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            ; children first: a box whose only child was a letter piece is
+            ; itself empty once the piece is gone
+            this.dropLetterJunk(k labs)
+            def gone:boolean false
+            if ((k.ocrText == false) && ((array_length k.kids) == 0) && ((k.role == "panel") || (k.role == "button") || (k.role == "checkbox") || (k.role == "icon") || (k.role == "shape") || (k.role == "textfield") || (k.role == "text") || (k.role == "label"))) {
+                def cover:int 0
+                def j:int 0
+                while (j < (array_length labs)) {
+                    cover = (cover + (this.overlapArea(k (itemAt labs j))))
+                    j = (j + 1)
+                }
+                if ((cover * 10) >= ((k.w * k.h) * 6)) {
+                    gone = true
+                }
+            }
+            if (gone == false) {
+                push keep k
+            }
+            i = (i + 1)
+        }
+        n.kids = keep
+    }
+
+    ; Words from an outside OCR are the text. Each OCR line (split where a
+    ; gap is wider than two word heights) becomes a label in the smallest
+    ; box that holds it; the region pass's runs and letter pieces under it
+    ; go. Words inside a control (a switch knob read as "J") are dropped.
+    fn applyWords:void (page:ErazerNode) {
+        def n:int (opts.wordCount())
+        if (n == 0) {
+            return
+        }
+        def ids:[int]
+        def i:int 0
+        while (i < n) {
+            if (this.wordOk(i)) {
+                push ids i
+            }
+            i = (i + 1)
+        }
+        this.sortWords(ids)
+        def used:[int]
+        def u:int 0
+        while (u < (array_length ids)) {
+            push used 0
+            u = (u + 1)
+        }
+        def lines:[ErazerNode]
+        def a:int 0
+        while (a < (array_length ids)) {
+            if ((itemAt used a) == 0) {
+                set used a 1
+                def first:int (itemAt ids a)
+                def lid:int (itemAt opts.wordLine first)
+                def cy0:int ((itemAt opts.wordY first) + (idiv (itemAt opts.wordH first) 2))
+                def hh:int (itemAt opts.wordH first)
+                ; everything on the same OCR line (or, without line ids, the
+                ; same row), then left to right
+                def row:[int]
+                push row first
+                def b:int (a + 1)
+                while (b < (array_length ids)) {
+                    def id:int (itemAt ids b)
+                    if ((itemAt used b) == 0) {
+                        def same:boolean false
+                        if (lid >= 0) {
+                            same = ((itemAt opts.wordLine id) == lid)
+                        } {
+                            def cy1:int ((itemAt opts.wordY id) + (idiv (itemAt opts.wordH id) 2))
+                            same = ((this.absI((cy1 - cy0))) <= (idiv hh 2))
+                        }
+                        if same {
+                            push row id
+                            set used b 1
+                        }
+                    }
+                    b = (b + 1)
+                }
+                this.sortWordsByX(row)
+                ; split where the gap is wider than two word heights: a
+                ; row's label and its far-right value are two labels
+                def line:[int]
+                def right:int (0 - 100000)
+                def r:int 0
+                while (r < (array_length row)) {
+                    def wid:int (itemAt row r)
+                    def gap:int ((itemAt opts.wordX wid) - right)
+                    if (((array_length line) > 0) && (gap > ((hh * 2) + 2))) {
+                        push lines (this.labelOfWords(line))
+                        def fresh:[int]
+                        line = fresh
+                    }
+                    push line wid
+                    right = (this.maxI(right ((itemAt opts.wordX wid) + (itemAt opts.wordW wid))))
+                    r = (r + 1)
+                }
+                if ((array_length line) > 0) {
+                    push lines (this.labelOfWords(line))
+                }
+            }
+            a = (a + 1)
+        }
+        ; one tall character among ordinary lines is a mark, not a word
+        def lh:[int]
+        def m:int 0
+        while (m < (array_length lines)) {
+            def l0:ErazerNode (itemAt lines m)
+            push lh l0.h
+            m = (m + 1)
+        }
+        def medH:int (this.medianInt(lh))
+        def placed:[ErazerNode]
+        def p:int 0
+        while (p < (array_length lines)) {
+            def lab2:ErazerNode (itemAt lines p)
+            def box:ErazerNode (this.containerFor(page lab2.x lab2.y lab2.w lab2.h))
+            def mark:boolean (((strlen lab2.text) <= 1) && ((lab2.h * 10) > (medH * 18)))
+            if (((this.isControl(box)) == false) && (mark == false)) {
+                this.inkIn(lab2 (this.localBgLuma(lab2)))
+                this.keepInkWords(lab2)
+                this.dropRunsIn(page lab2)
+                this.dropCovered(box lab2)
+                box.addKid(lab2)
+                push placed lab2
+            }
+            p = (p + 1)
+        }
+        this.dropLetterJunk(page placed)
+        this.refreshControlText(page)
+    }
+
+    ; A button or field shows the text of its first run.
+    fn refreshControlText:void (n:ErazerNode) {
+        if ((n.role == "button") || (n.role == "textfield") || (n.role == "tab") || (n.role == "menuitem")) {
+            def hit@(optional):ErazerNode (this.firstText(n))
+            if hit {
+                this.copyTextOnto(n (unwrap hit))
+            }
+        }
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            this.refreshControlText(k)
+            i = (i + 1)
+        }
+    }
+
+    ; An edge a label shares with a sibling label in the same container is
+    ; its alignment: the lines of a paragraph share a left edge, whatever
+    ; the margins of the card they sit in.
+    fn sharedEdge:string (n:ErazerNode k:ErazerNode) {
+        def l:int 0
+        def r:int 0
+        def c:int 0
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def o:ErazerNode (itemAt n.kids i)
+            if ((o != k) && ((o.role == "text") || (o.role == "label"))) {
+                if ((this.absI((o.x - k.x))) <= 3) {
+                    l = (l + 1)
+                }
+                if ((this.absI(((o.maxX()) - (k.maxX())))) <= 3) {
+                    r = (r + 1)
+                }
+                if ((this.absI(((o.cx()) - (k.cx())))) <= 3) {
+                    c = (c + 1)
+                }
+            }
+            i = (i + 1)
+        }
+        if ((l >= r) && (l >= c) && (l > 0)) {
+            return "left"
+        }
+        if ((c >= r) && (c > 0)) {
+            return "center"
+        }
+        if (r > 0) {
+            return "right"
+        }
+        return ""
+    }
+
+    ; Where each label sits: an edge shared with sibling labels, or else
+    ; the side of its container it hugs, or the middle when the two
+    ; margins match. A label that nearly fills its box says nothing.
+    fn alignTexts:void (n:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            def shared:string (this.sharedEdge(n k))
+            ; a right or centre edge shared by chance ("Settings…" ending
+            ; where "Other Networks" ends) does not beat a label that hugs
+            ; its container's left side
+            def lg0:int (k.x - n.x)
+            def rg0:int ((n.maxX()) - (k.maxX()))
+            if ((shared == "right") && (rg0 >= lg0)) {
+                shared = ""
+            }
+            if ((shared == "center") && ((this.absI((lg0 - rg0))) > (this.maxI(8 (idiv (lg0 + rg0) 4))))) {
+                shared = ""
+            }
+            if (((k.role == "text") || (k.role == "label")) && ((strlen shared) > 0)) {
+                k.align = shared
+            }
+            if (((k.role == "text") || (k.role == "label")) && ((strlen shared) == 0)) {
+                def lg:int (k.x - n.x)
+                def rg:int ((n.maxX()) - (k.maxX()))
+                def slack:int (lg + rg)
+                if (slack >= 8) {
+                    def tol:int (this.maxI(4 (idiv slack 8)))
+                    if (((this.absI((lg - rg))) <= tol) && (lg > 8)) {
+                        k.align = "center"
+                    } {
+                        if (rg < lg) {
+                            k.align = "right"
+                        } {
+                            k.align = "left"
+                        }
+                    }
+                }
+            }
+            this.alignTexts(k)
+            i = (i + 1)
+        }
+    }
+
     fn run:ErazerDoc () {
         def fullW:int img.width
         def fullH:int img.height
         def k:int (this.pickScale())
+        def full:ImageBuffer img
         if (k > 1) {
             img = (this.boxDown(k))
         }
@@ -3175,6 +3733,10 @@ class Erazer {
             w = fullW
             h = fullH
         }
+        img = full
+        this.applyWords(page)
+        this.relabelTexts(page)
+        this.alignTexts(page)
         def boxes:[ErazerLayoutBox] (ErazerLayoutNet.boxesFromTree(page w h))
         def net:ErazerLayoutNet (ErazerLayoutNet.shared())
         def guesses:[ErazerLayoutGuess] (net.scan(boxes))

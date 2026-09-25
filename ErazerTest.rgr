@@ -39,6 +39,7 @@ class ErazerTest {
         test.testFrostedList(t)
         test.testCornersAndRows(t)
         test.testTextDoubt(t)
+        test.testOutsideWords(t)
         test.testJson(t)
         test.testLayoutFeatures(t)
         test.testLayoutLearn(t)
@@ -345,6 +346,51 @@ class ErazerTest {
             i = (i + 1)
         }
         return c
+    }
+
+    fn wordAt:void (o:ErazerOptions text:string x:int y:int line:int) {
+        o.addLineWord(text x y (ErazerFont.textWidth(text 2)) (ErazerFont.textHeight(2)) 95 line)
+    }
+
+    ; Words from an outside OCR (Tesseract in the browser, the CLI's
+    ; --words) are the text; each label gets its alignment in its box.
+    fn testOutsideWords:void (t:RgTest) {
+        def img:ImageBuffer (ErazerPaint.blank(340 150 242 242 247))
+        ErazerFont.fillRoundRect(img 20 20 300 110 10 255 255 255)
+        ErazerPaint.paintLabel(img 36 36 "Name")
+        def vw:int (ErazerFont.textWidth("Value" 2))
+        ErazerPaint.paintLabel(img ((304 - vw)) 36 "Value")
+        def tw:int (ErazerFont.textWidth("Title" 2))
+        ErazerPaint.paintLabel(img (20 + (idiv (300 - tw) 2)) 90 "Title")
+        ErazerPaint.paintSwitch(img 250 70 true)
+        def o:ErazerOptions (ErazerOptions.defaults())
+        this.wordAt(o "Nimi" 36 36 1)
+        this.wordAt(o "Arvo" (304 - vw) 36 1)
+        this.wordAt(o "Otsikko" (20 + (idiv (300 - tw) 2)) 90 2)
+        ; the knob, read as a letter
+        o.addLineWord("J" 274 72 26 26 90 3)
+        ; low confidence: ignored
+        o.addLineWord("zzz" 40 100 20 10 20 4)
+        def doc:ErazerDoc (Erazer.fromImageBuffer(img o))
+        def root:ErazerNode (unwrap doc.root)
+        def a@(optional):ErazerNode (root.findText("Nimi"))
+        def b@(optional):ErazerNode (root.findText("Arvo"))
+        def c@(optional):ErazerNode (root.findText("Otsikko"))
+        t.ok("OCR text replaces the 5x7 reading" ((null? a) == false))
+        t.ok("the old reading is gone" (null? (root.findText("Name"))))
+        t.ok("words split at a wide gap" ((null? b) == false))
+        t.ok("a knob read as J is not text" (null? (root.findText("J"))))
+        t.ok("a low-confidence word is ignored" (null? (root.findText("zzz"))))
+        if (((null? a) == false) && ((null? b) == false) && ((null? c) == false)) {
+            def na:ErazerNode (unwrap a)
+            def nb:ErazerNode (unwrap b)
+            def nc:ErazerNode (unwrap c)
+            t.eqStr("label hugging the left" na.align "left")
+            t.eqStr("value at the right edge" nb.align "right")
+            t.eqStr("title in the middle" nc.align "center")
+            t.ok("font size is CSS-sized" (nc.fontSize > 14))
+        }
+        t.ok("alignment reaches the JSON" ((indexOf doc.json "\"text-align\":\"right\"") >= 0))
     }
 
     fn testSliders:void (t:RgTest) {

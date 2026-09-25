@@ -60,6 +60,33 @@ Each node carries `class-name` `erazer-button`,
 `erazer-textfield`, `erazer-checkbox`, `erazer-tab`, `erazer-menu`, …
 so a later pass can restyle it.
 
+## Text from an outside OCR
+
+The built-in reader knows only the 5×7 test face. For a real screenshot
+the live page has **Lue teksti (OCR)**: it loads
+[Tesseract.js](https://github.com/naptha/tesseract.js) from jsDelivr on
+first use (about 5 MB, then cached by the browser), reads the image in the
+browser and hands the words to Erazer. The image still does not leave the
+machine. On the command line, give Tesseract's own TSV:
+
+```sh
+tesseract shot.png words tsv            # writes words.tsv
+npm run erazer -- shot.png out.evg.json --words words.tsv --outline
+```
+
+Each OCR line, split where a gap is wider than two word heights, becomes
+a label in the smallest box that holds it. The region pass's runs and
+letter pieces under it go. A word inside a control (a switch knob read
+as "J"), a lone tall character, and words under `--wordMinConf` (55) are
+dropped. The label's height comes from its ink, and its CSS `font-size`
+from that height and the letters it has (ascenders, descenders). Every
+label gets a `text-align`: an edge it shares with a sibling label (the
+lines of a paragraph), otherwise the side of its container it hugs, or
+`center` when both margins match.
+
+The page draws the EVG tree back as plain DOM under **Rekonstruktio**, so
+text, alignment, radii and gradients can be checked against the screenshot.
+
 ## Layout net (geometry, not pixels)
 
 Erazer already has primitive boxes and a widget type. A second, tiny
@@ -108,6 +135,7 @@ Run from the Ranger checkout root; the scripts are in Ranger's `package.json`.
 npm run erazer:test                 # synthetic UI fixtures (form, tabs, menu, icon)
 npm run erazer -- in.png out.evg.json
 npm run erazer -- in.png out.evg.json --overlay boxes.svg --outline
+npm run erazer -- in.png out.evg.json --words words.tsv   # tesseract in.png words tsv
 npm run erazer:web:serve            # live page at http://localhost:8008/
 npm run erazer:web:smoke            # the bundle's exports, in Node
 npm run erazer:web:lab              # the live page, in a browser: capture + train
