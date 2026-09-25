@@ -1875,7 +1875,171 @@ class ErazerLayoutNet {
             }
             i = (i + 1)
         }
-        return (this.nms(raw))
+        return (this.plausible((this.nms(raw)) boxes))
+    }
+
+    fn isMember:boolean (g:ErazerLayoutGuess idx:int) {
+        def i:int 0
+        while (i < (array_length g.members)) {
+            if ((itemAt g.members i) == idx) {
+                return true
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
+    fn interArea:double (ax:double ay:double aw:double ah:double bx:double by:double bw:double bh:double) {
+        def ix:double ((ErazerLayoutFeat.minD((ax + aw) (bx + bw))) - (ErazerLayoutFeat.maxD(ax bx)))
+        def iy:double ((ErazerLayoutFeat.minD((ay + ah) (by + bh))) - (ErazerLayoutFeat.maxD(ay by)))
+        if ((ix <= 0.0) || (iy <= 0.0)) {
+            return 0.0
+        }
+        return (ix * iy)
+    }
+
+    ; A column of mixed sizes (titles and subtitles) whose edge member has
+    ; a neighbour outside the group nearer than the members are to each
+    ; other starts or ends mid-row: "subtitle, title" pairs out of phase
+    ; with the "title, subtitle" rows on the screen.
+    fn splitsRows:boolean (g:ErazerLayoutGuess boxes:[ErazerLayoutBox]) {
+        if (g.axis != "vertical") {
+            return false
+        }
+        def ms:[ErazerLayoutBox]
+        def i:int 0
+        while (i < (array_length boxes)) {
+            def b:ErazerLayoutBox (itemAt boxes i)
+            if (this.isMember(g b.index)) {
+                push ms b
+            }
+            i = (i + 1)
+        }
+        def n:int (array_length ms)
+        if (n < 2) {
+            return false
+        }
+        def fmin:double 100000.0
+        def fmax:double 0.0
+        def ys:[double]
+        def j:int 0
+        while (j < n) {
+            def m:ErazerLayoutBox (itemAt ms j)
+            fmin = (ErazerLayoutFeat.minD(fmin m.fontSize))
+            fmax = (ErazerLayoutFeat.maxD(fmax m.fontSize))
+            j = (j + 1)
+        }
+        if ((fmin <= 0.0) || (fmax < (fmin * 1.15))) {
+            return false
+        }
+        ; gaps between consecutive members, top to bottom
+        def gaps:[double]
+        def a:int 0
+        while (a < n) {
+            def ma:ErazerLayoutBox (itemAt ms a)
+            def best:double 100000.0
+            def c:int 0
+            while (c < n) {
+                def mc:ErazerLayoutBox (itemAt ms c)
+                def d:double (mc.y - (ma.y + ma.h))
+                if ((c != a) && (mc.y > ma.y) && (d < best)) {
+                    best = d
+                }
+                c = (c + 1)
+            }
+            if (best < 100000.0) {
+                push gaps best
+            }
+            a = (a + 1)
+        }
+        if ((array_length gaps) == 0) {
+            return false
+        }
+        def big:double 0.0
+        def cnt:int 0
+        def q:int 0
+        while (q < (array_length gaps)) {
+            def gq:double (itemAt gaps q)
+            def above:int 0
+            def r:int 0
+            while (r < (array_length gaps)) {
+                if ((itemAt gaps r) < gq) {
+                    above = (above + 1)
+                }
+                r = (r + 1)
+            }
+            if ((above >= (idiv (array_length gaps) 2)) && (cnt == 0)) {
+                big = gq
+                cnt = 1
+            }
+            q = (q + 1)
+        }
+        def near:double (big * 0.5)
+        def k:int 0
+        while (k < (array_length boxes)) {
+            def o:ErazerLayoutBox (itemAt boxes k)
+            def outside:boolean (((o.y + o.h) <= (g.y + 1.0)) || (o.y >= ((g.y + g.h) - 1.0)))
+            if (((this.isMember(g o.index)) == false) && outside && (o.w > 0.0)) {
+                def e:int 0
+                while (e < n) {
+                    def m2:ErazerLayoutBox (itemAt ms e)
+                    def sameCol:boolean ((ErazerLayoutFeat.absD((o.x - m2.x))) <= 3.0)
+                    def dBelow:double (o.y - (m2.y + m2.h))
+                    def dAbove:double (m2.y - (o.y + o.h))
+                    if (sameCol && (((dBelow >= (0.0 - 1.0)) && (dBelow < near)) || ((dAbove >= (0.0 - 1.0)) && (dAbove < near)))) {
+                        return true
+                    }
+                    e = (e + 1)
+                }
+            }
+            k = (k + 1)
+        }
+        return false
+    }
+
+    ; A group is a box around content, so its outline does not cut through
+    ; anything: a guess that crosses a box it does not hold (a list whose
+    ; frame runs through the middle of a heading), or partly overlaps a
+    ; stronger guess, is dropped. Nested guesses stay.
+    fn plausible:[ErazerLayoutGuess] (xs:[ErazerLayoutGuess] boxes:[ErazerLayoutBox]) {
+        def kept:[ErazerLayoutGuess]
+        def i:int 0
+        while (i < (array_length xs)) {
+            def g:ErazerLayoutGuess (itemAt xs i)
+            def gArea:double (g.w * g.h)
+            def ok:boolean true
+            def b:int 0
+            while (ok && (b < (array_length boxes))) {
+                def bx:ErazerLayoutBox (itemAt boxes b)
+                def bArea:double (bx.w * bx.h)
+                if ((bArea > 0.0) && ((this.isMember(g bx.index)) == false)) {
+                    def ov:double (this.interArea(g.x g.y g.w g.h bx.x bx.y bx.w bx.h))
+                    ; partly in: not inside the group, not holding it
+                    if ((ov > (bArea * 0.2)) && (ov < (bArea * 0.9)) && (ov < (gArea * 0.9))) {
+                        ok = false
+                    }
+                }
+                b = (b + 1)
+            }
+            if (ok && (this.splitsRows(g boxes))) {
+                ok = false
+            }
+            def t:int 0
+            while (ok && (t < (array_length kept))) {
+                def o:ErazerLayoutGuess (itemAt kept t)
+                def ov2:double (this.interArea(g.x g.y g.w g.h o.x o.y o.w o.h))
+                def oArea:double (o.w * o.h)
+                if ((ov2 > 0.0) && (ov2 < (gArea * 0.9)) && (ov2 < (oArea * 0.9))) {
+                    ok = false
+                }
+                t = (t + 1)
+            }
+            if ok {
+                push kept g
+            }
+            i = (i + 1)
+        }
+        return kept
     }
 
     fn seedFromSynthetics:void () {

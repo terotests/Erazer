@@ -3392,6 +3392,53 @@ class Erazer {
         c.kids = keep
     }
 
+    ; An OCR "word" that is mostly a control's box is the control read as
+    ; letters: a nav icon comes back as "a", "tJ" or "%".
+    fn onControl:boolean (n:ErazerNode lab:ErazerNode) {
+        def area:int (lab.w * lab.h)
+        if (area <= 0) {
+            return false
+        }
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if ((this.isControl(k)) && (((this.overlapArea(k lab)) * 2) >= area)) {
+                return true
+            }
+            if (this.onControl(k lab)) {
+                return true
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
+    ; A word box that reaches up into a control above it ("Orders" taking
+    ; in the bottom of its tab icon) starts where the control ends.
+    fn clipUnderControls:void (n:ErazerNode lab:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if ((this.isControl(k)) && ((this.overlapArea(k lab)) > 0) && ((k.cy()) < (lab.y + (idiv lab.h 2))) && ((k.maxY()) < (lab.maxY()))) {
+                def bottom:int (lab.maxY())
+                lab.y = (k.maxY())
+                lab.h = (bottom - lab.y)
+            }
+            this.clipUnderControls(k lab)
+            i = (i + 1)
+        }
+    }
+
+    ; A short word centred in a small badge is the badge's glyph (a chart
+    ; icon read as "all"), not a caption.
+    fn badgeGlyph:boolean (box:ErazerNode lab:ErazerNode) {
+        if (((strlen lab.text) > 3) || (box.role == "page") || (box.w > 96) || (box.h > 96)) {
+            return false
+        }
+        def tol:int (this.maxI(4 (idiv box.h 8)))
+        return (((this.absI(((lab.cx()) - (box.cx())))) <= tol) && ((this.absI(((lab.cy()) - (box.cy())))) <= tol))
+    }
+
     fn isControl:boolean (n:ErazerNode) {
         return ((n.role == "switch") || (n.role == "checkbox") || (n.role == "slider") || (n.role == "sliderthumb") || (n.role == "icon"))
     }
@@ -3505,19 +3552,25 @@ class Erazer {
                 }
                 this.sortWordsByX(row)
                 ; split where the gap is wider than two word heights: a
-                ; row's label and its far-right value are two labels
+                ; row's label and its far-right value are two labels. The
+                ; smaller of the two neighbours sets the height: a word box
+                ; that took in the icon above it ("Analytics" 31px tall over
+                ; 11px letters) does not join a row of icon captions.
                 def line:[int]
                 def right:int (0 - 100000)
+                def prevH:int hh
                 def r:int 0
                 while (r < (array_length row)) {
                     def wid:int (itemAt row r)
                     def gap:int ((itemAt opts.wordX wid) - right)
-                    if (((array_length line) > 0) && (gap > ((hh * 2) + 2))) {
+                    def gh:int (this.minI(prevH (itemAt opts.wordH wid)))
+                    if (((array_length line) > 0) && (gap > ((gh * 2) + 2))) {
                         push lines (this.labelOfWords(line))
                         def fresh:[int]
                         line = fresh
                     }
                     push line wid
+                    prevH = (itemAt opts.wordH wid)
                     right = (this.maxI(right ((itemAt opts.wordX wid) + (itemAt opts.wordW wid))))
                     r = (r + 1)
                 }
@@ -3542,7 +3595,8 @@ class Erazer {
             def lab2:ErazerNode (itemAt lines p)
             def box:ErazerNode (this.containerFor(page lab2.x lab2.y lab2.w lab2.h))
             def mark:boolean (((strlen lab2.text) <= 1) && ((lab2.h * 10) > (medH * 18)))
-            if (((this.isControl(box)) == false) && (mark == false)) {
+            this.clipUnderControls(page lab2)
+            if (((this.isControl(box)) == false) && (mark == false) && ((this.onControl(page lab2)) == false) && ((this.badgeGlyph(box lab2)) == false)) {
                 this.inkIn(lab2 (this.localBgLuma(lab2)))
                 this.keepInkWords(lab2)
                 this.dropRunsIn(page lab2)
@@ -3570,6 +3624,78 @@ class Erazer {
             this.refreshControlText(k)
             i = (i + 1)
         }
+    }
+
+    fn collectTexts:void (n:ErazerNode out:[ErazerNode]) {
+        if ((n.role == "text") || (n.role == "label")) {
+            push out n
+        }
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.collectTexts((itemAt n.kids i) out)
+            i = (i + 1)
+        }
+    }
+
+    ; A "checkbox" with a caption centred under it, and none beside it, is
+    ; an icon (a tab bar's Orders / Analytics / Settings); so is one centred
+    ; in a badge at least twice its size. A checkbox's own label sits on
+    ; its right.
+    fn iconsFromCheckboxes:void (n:ErazerNode par:ErazerNode texts:[ErazerNode]) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.iconsFromCheckboxes((itemAt n.kids i) n texts)
+            i = (i + 1)
+        }
+        if (n.role != "checkbox") {
+            return
+        }
+        def beside:boolean false
+        def below:boolean false
+        def t:int 0
+        while (t < (array_length texts)) {
+            def k:ErazerNode (itemAt texts t)
+            if (((this.absI(((k.cy()) - (n.cy())))) <= (idiv n.h 2)) && (k.x >= (n.maxX())) && ((k.x - (n.maxX())) <= (n.w * 3))) {
+                beside = true
+            }
+            def gap:int (k.y - (n.maxY()))
+            def overlapX:boolean ((k.x < (n.maxX())) && ((k.maxX()) > n.x))
+            if ((gap >= 0) && (gap <= (this.maxI(n.h 12))) && overlapX && ((this.absI(((k.cx()) - (n.cx())))) <= (this.maxI(n.w 12)))) {
+                below = true
+            }
+            t = (t + 1)
+        }
+        def badge:boolean false
+        if ((par.role != "page") && (par.w >= (n.w * 2)) && (par.h >= (n.h * 2)) && ((this.absI(((par.cx()) - (n.cx())))) <= 3) && ((this.absI(((par.cy()) - (n.cy())))) <= 3)) {
+            badge = true
+        }
+        if ((beside == false) && (below || badge) && ((this.solidBox(n)) == false)) {
+            n.role = "icon"
+            n.confidence = 0.7
+            this.traceIcons(n)
+        }
+    }
+
+    ; Nothing but its own fill inside the box: a chart bar or a swatch,
+    ; where an icon shows the background through its strokes.
+    fn solidBox:boolean (n:ErazerNode) {
+        def pixels:buffer img.pixels
+        def hit:int 0
+        def tot:int 0
+        def y:int (n.y + 3)
+        while ((y < ((n.maxY()) - 3)) && (y < img.height)) {
+            def x:int (n.x + 3)
+            while ((x < ((n.maxX()) - 3)) && (x < img.width)) {
+                def off:int (((y * img.width) + x) * 4)
+                tot = (tot + 1)
+                if (this.colorNear((buffer_get pixels off) (buffer_get pixels (off + 1)) (buffer_get pixels (off + 2)) n.r n.g n.b 40) == false) {
+                    hit = (hit + 1)
+                }
+                x = (x + 2)
+            }
+            y = (y + 2)
+        }
+        return ((tot > 0) && ((hit * 12) < tot))
     }
 
     ; An edge a label shares with a sibling label in the same container is
@@ -3607,6 +3733,24 @@ class Erazer {
         return ""
     }
 
+    ; A label just under a sibling box, centred on it, is that box's caption
+    ; (an icon's name in a tab bar or a shortcut row).
+    fn captionOf:boolean (n:ErazerNode k:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def o:ErazerNode (itemAt n.kids i)
+            if ((o != k) && (o.role != "text") && (o.role != "label") && (o.w >= 12)) {
+                def gap:int (k.y - (o.maxY()))
+                def tol:int (this.maxI(3 (idiv o.w 6)))
+                if ((gap >= 0) && (gap <= (this.maxI(k.h 12))) && ((this.absI(((k.cx()) - (o.cx())))) <= tol)) {
+                    return true
+                }
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
     ; Where each label sits: an edge shared with sibling labels, or else
     ; the side of its container it hugs, or the middle when the two
     ; margins match. A label that nearly fills its box says nothing.
@@ -3625,6 +3769,9 @@ class Erazer {
             }
             if ((shared == "center") && ((this.absI((lg0 - rg0))) > (this.maxI(8 (idiv (lg0 + rg0) 4))))) {
                 shared = ""
+            }
+            if (((k.role == "text") || (k.role == "label")) && (this.captionOf(n k))) {
+                shared = "center"
             }
             if (((k.role == "text") || (k.role == "label")) && ((strlen shared) > 0)) {
                 k.align = shared
@@ -3736,6 +3883,9 @@ class Erazer {
         img = full
         this.applyWords(page)
         this.relabelTexts(page)
+        def texts2:[ErazerNode]
+        this.collectTexts(page texts2)
+        this.iconsFromCheckboxes(page page texts2)
         this.alignTexts(page)
         def boxes:[ErazerLayoutBox] (ErazerLayoutNet.boxesFromTree(page w h))
         def net:ErazerLayoutNet (ErazerLayoutNet.shared())

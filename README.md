@@ -43,7 +43,7 @@ a manual run can override it.
 | Characters | A 5×7 atlas (the same face the tests paint with). On a real screenshot the run, size and colour still land; a reading whose cells match the atlas poorly is dropped rather than shown as noise |
 | Button | Compact rectangle, centred label, often an accent fill. Several same-row chips of the same height and fill with one-line labels are promoted together, even when one is too wide or OCR-split to classify alone |
 | Text field | Wide light rectangle, left-aligned text or empty interior, optional border |
-| Checkbox | Small square, solid or a hollow frame |
+| Checkbox | Small square, solid or a hollow frame, with nothing beside it that says otherwise. A square with a caption centred under it and none on its right (a tab bar), or centred in a badge twice its size, is an icon — unless it is one flat fill (a chart bar) |
 | Switch | A pill about twice as wide as tall with a round knob at one end |
 | Slider | Wide thin track with a circular thumb on the bar, or a filled part beside an empty one. A lone thin bar (a home indicator, a divider) is not a slider |
 | List rows | Hairlines across most of a card split it into `listitem` rows; bands stacked edge to edge are rows too. The card becomes a `list` |
@@ -74,15 +74,20 @@ tesseract shot.png words tsv            # writes words.tsv
 npm run erazer -- shot.png out.evg.json --words words.tsv --outline
 ```
 
-Each OCR line, split where a gap is wider than two word heights, becomes
+Each OCR line, split where a gap is wider than two word heights (the
+smaller of the two neighbouring words, so a word box that took in the icon
+above it does not join a row of captions), becomes
 a label in the smallest box that holds it. The region pass's runs and
 letter pieces under it go. A word inside a control (a switch knob read
-as "J"), a lone tall character, and words under `--wordMinConf` (55) are
-dropped. The label's height comes from its ink, and its CSS `font-size`
+as "J"), a word mostly on a control (a tab icon read as "a"), a short
+word centred in a small badge (a chart glyph read as "all"), a lone tall
+character, and words under `--wordMinConf` (55) are dropped; a word box
+that reaches up into a control starts below it. The label's height comes from its ink, and its CSS `font-size`
 from that height and the letters it has (ascenders, descenders). Every
 label gets a `text-align`: an edge it shares with a sibling label (the
 lines of a paragraph), otherwise the side of its container it hugs, or
-`center` when both margins match.
+`center` when both margins match. A label just under a box and centred on
+it (an icon's caption) is `center`.
 
 The page draws the EVG tree back as plain DOM under **Rekonstruktio**, so
 text, alignment, radii and gradients can be checked against the screenshot.
@@ -101,7 +106,10 @@ pattern). Candidates only group boxes that share a container, a column
 breaks where a gap is wider than three em, and each container's direct
 children are one more candidate (a row's label and switch). The net only names a candidate and returns an abstract
 structure: axis, item count, alignment, spacing in `em`, member
-indices. A user selection plus a name is one training point; gap,
+indices. A guess whose outline cuts through a box it does not hold, or
+partly overlaps a stronger guess, is dropped, and so is a column of
+titles and subtitles that starts or ends mid-row (a member's neighbour
+outside the group is nearer than the members are to each other). A user selection plus a name is one training point; gap,
 scale, font-size and leave-one-out jitter expand it to a dozen
 samples, with axis-flips as hard negatives.
 
