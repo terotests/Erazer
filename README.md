@@ -53,7 +53,7 @@ a manual run can override it.
 | Tabs | Three or more sibling labelled bars on one row |
 | Menu | Three or more stacked labelled rows |
 | Form | A panel that holds two or more fields |
-| Icon | A small non-text mark; vectorized with `EvgBitmapTracer` to SVG / EVG paths |
+| Icon | A small non-text mark; vectorized with `EvgBitmapTracer` to SVG / EVG paths. The crop is traced as ink (black) against the colour around the box (white), so a white icon on an orange button is traced as the icon; the EVG node paints no box, border or radius of its own and its paths take the ink colour |
 
 The EVG tree uses `position: absolute` so the reconstruction keeps the
 screenshot's geometry. To see the reconstruction, render the result:
@@ -105,6 +105,21 @@ text, alignment, radii, gradients and traced icons (inline SVG in the ink
 colour, the recogniser's name on hover) can be checked against the
 screenshot. When Tesseract.js cannot be loaded the run goes on without
 words.
+
+**Rekonstruktio** is also a small editor, Figma-style:
+
+- zoom − / % / + / **Sovita** (fit) / **1:1** above and below the canvas,
+  Ctrl/⌘ + wheel, and the keys `+` `-` `0`;
+- click an element (or pick it under **Tasot**, the layer list) and the
+  inspector on the right shows and edits its type, text, X / Y / width /
+  height, font size, colour, alignment, background, radius, an icon's
+  name and ink colour;
+- **Poista** or Delete / Backspace removes it, **Valitse vanhempi**
+  selects its parent, Esc clears the selection;
+- edits go to the EVG JSON below; **Lataa EVG JSON** saves it.
+
+The OCR language defaults to **englanti + suomi** in a Finnish browser:
+English alone reads "Lisää" as "Lisaa" at 51% and it is dropped.
 
 ## Icon names
 
