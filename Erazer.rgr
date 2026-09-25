@@ -2703,6 +2703,87 @@ class Erazer {
         }
     }
 
+    ; Each pixel of b by its projection onto background → ink, where the
+    ; background is the mean of the one-pixel ring just outside the box:
+    ; ink black, background white.
+    fn inkToBlack:void (b:ImageBuffer x:int y:int w:int h:int ir:int ig:int ib:int) {
+        def sr:int 0
+        def sg:int 0
+        def sb:int 0
+        def cnt:int 0
+        def px:int (x - 1)
+        while (px <= (x + w)) {
+            def e:int 0
+            while (e < 2) {
+                def py:int (y - 1)
+                if (e == 1) {
+                    py = (y + h)
+                }
+                if (img.isValidCoord(px py)) {
+                    def c:Color (img.getPixel(px py))
+                    sr = (sr + c.r)
+                    sg = (sg + c.g)
+                    sb = (sb + c.b)
+                    cnt = (cnt + 1)
+                }
+                e = (e + 1)
+            }
+            px = (px + 1)
+        }
+        def qy:int y
+        while (qy < (y + h)) {
+            def f:int 0
+            while (f < 2) {
+                def qx:int (x - 1)
+                if (f == 1) {
+                    qx = (x + w)
+                }
+                if (img.isValidCoord(qx qy)) {
+                    def c2:Color (img.getPixel(qx qy))
+                    sr = (sr + c2.r)
+                    sg = (sg + c2.g)
+                    sb = (sb + c2.b)
+                    cnt = (cnt + 1)
+                }
+                f = (f + 1)
+            }
+            qy = (qy + 1)
+        }
+        if (cnt == 0) {
+            return
+        }
+        def br:int (idiv sr cnt)
+        def bgc:int (idiv sg cnt)
+        def bb:int (idiv sb cnt)
+        def dr:int (ir - br)
+        def dg:int (ig - bgc)
+        def db:int (ib - bb)
+        def dd:int (((dr * dr) + (dg * dg)) + (db * db))
+        ; ink and background too alike to tell apart: trace as it is
+        if (dd < 400) {
+            return
+        }
+        def yy:int 0
+        while (yy < b.height) {
+            def xx:int 0
+            while (xx < b.width) {
+                def c3:Color (b.getPixel(xx yy))
+                def dot:int ((((c3.r - br) * dr) + ((c3.g - bgc) * dg)) + ((c3.b - bb) * db))
+                def t:int (idiv (dot * 255) dd)
+                if (t < 0) {
+                    t = 0
+                }
+                if (t > 255) {
+                    t = 255
+                }
+                def v:int (255 - t)
+                b.setPixelRGBA(xx yy v v v 255)
+                xx = (xx + 1)
+            }
+            yy = (yy + 1)
+        }
+    }
+
     fn crop:ImageBuffer (x:int y:int w:int h:int) {
         def out (new ImageBuffer())
         def cw:int (this.maxI(1 w))
@@ -2740,6 +2821,11 @@ class Erazer {
                 def cw:int (n.w + (pad * 2))
                 def ch:int (n.h + (pad * 2))
                 def slice:ImageBuffer (this.crop(cx cy cw ch))
+                ; the tracer follows dark pixels: the crop becomes black where
+                ; it is the icon's ink and white where it is the background
+                ; around it, so a white icon on an orange button is traced as
+                ; the icon and not as its surroundings (a box)
+                this.inkToBlack(slice n.x n.y n.w n.h n.r n.g n.b)
                 def topts:EvgTraceOptions (EvgTraceOptions.preset("lineart"))
                 topts.turdsize = 1
                 def tr:EvgBitmapTracer (EvgBitmapTracer.fromImageBuffer(slice topts))
@@ -2796,7 +2882,7 @@ class Erazer {
             if ((n.radius > 0) && (traced == false)) {
                 el.box.borderRadius = (EVGUnit.px((to_double n.radius)))
             }
-            if (n.borderW > 0) {
+            if ((n.borderW > 0) && (traced == false)) {
                 el.box.borderWidth = (EVGUnit.px((to_double n.borderW)))
                 el.box.borderColor = (EVGColor.rgb(n.borderR n.borderG n.borderB))
             }

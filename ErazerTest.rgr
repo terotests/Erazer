@@ -33,6 +33,7 @@ class ErazerTest {
         test.testMenu(t)
         test.testIcon(t)
         test.testIconNames(t)
+        test.testLightIcon(t)
         test.testChipRow(t)
         test.testChipStrip(t)
         test.testSlider(t)
@@ -185,6 +186,36 @@ class ErazerTest {
             t.ok("outline carries the name" ((indexOf doc.outline "name=plus") >= 0))
             t.ok("icon paths are drawn in the ink" ((indexOf doc.json "\"fill\":\"rgb(17,24,39)\"") >= 0))
             t.ok("no black tracer fill" ((indexOf doc.json "\"fill\":\"rgb(0,0,0)\"") < 0))
+        }
+    }
+
+    ; A white plus on an orange button: traced as the plus, drawn white.
+    fn testLightIcon:void (t:RgTest) {
+        def img:ImageBuffer (ErazerPaint.blank(200 80 255 255 255))
+        ErazerFont.fillRoundRect(img 10 10 180 60 12 242 114 19)
+        ErazerFont.fillRect(img 30 38 20 4 255 255 255)
+        ErazerFont.fillRect(img 38 30 4 20 255 255 255)
+        def doc:ErazerDoc (Erazer.analyze(img))
+        def hit@(optional):ErazerNode (doc.root.findRole("icon"))
+        if (null? hit) {
+            t.ok("white plus on orange is an icon" false)
+        } {
+            def n:ErazerNode (unwrap hit)
+            t.ok("white plus is traced" ((array_length n.iconPaths) > 0))
+            t.ok("its paths are white" ((indexOf doc.json "\"fill\":\"rgb(255,255,255)\"") >= 0))
+            ; the plus, not its surroundings: the same path as a black plus
+            ; on white at the same place
+            def dark:ImageBuffer (ErazerPaint.blank(200 80 255 255 255))
+            ErazerFont.fillRect(dark 30 38 20 4 17 24 39)
+            ErazerFont.fillRect(dark 38 30 4 20 17 24 39)
+            def ddoc:ErazerDoc (Erazer.analyze(dark))
+            def dhit@(optional):ErazerNode (ddoc.root.findRole("icon"))
+            if (null? dhit) {
+                t.ok("black plus on white is an icon" false)
+            } {
+                def dn:ErazerNode (unwrap dhit)
+                t.eqStr("traced path is the plus, not the box" (itemAt n.iconPaths 0) (itemAt dn.iconPaths 0))
+            }
         }
     }
 
