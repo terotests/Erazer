@@ -478,6 +478,7 @@
     var canvas = bufferToCanvas(img);
     canvas.style.opacity = sourceOpacity();
     frame.appendChild(canvas);
+    try { source = { url: canvas.toDataURL("image/png"), w: img.width, h: img.height }; } catch (e) {}
     frame.insertAdjacentHTML("beforeend", doc.overlaySvg);
     var svg = frame.querySelector("svg");
     if (svg) {
@@ -646,6 +647,23 @@
     svg.appendChild(path);
     return svg;
   }
+  /* the analysed image, for "source#xywh=x,y,w,h" image nodes */
+  var source = { url: "", w: 1, h: 1 };
+  function buildImage(el, props) {
+    var m = /#xywh=(-?\d+),(-?\d+),(\d+),(\d+)/.exec(props.src || "");
+    el.style.overflow = "hidden";
+    if (!m || !source.url) return;
+    var x = +m[1], y = +m[2], w = Math.max(1, +m[3]), h = Math.max(1, +m[4]);
+    var bw = parseFloat(props.width) || w, bh = parseFloat(props.height) || h;
+    var kx = bw / w, ky = bh / h;
+    var im = document.createElement("img");
+    im.src = source.url;
+    im.alt = "";
+    im.draggable = false;
+    im.style.cssText = "position:absolute;max-width:none;pointer-events:none;left:" + (-x * kx) + "px;top:" + (-y * ky) +
+      "px;width:" + (source.w * kx) + "px;height:" + (source.h * ky) + "px";
+    el.appendChild(im);
+  }
   function buildNode(n) {
     var el = document.createElement(n.tag === "span" ? "span" : "div");
     el.__node = n;
@@ -659,6 +677,7 @@
       if (named) el.title = named[1];
     }
     if (n.text) el.textContent = n.text;
+    if (n.tag === "img") buildImage(el, props);
     (n.children || []).forEach(function (c) {
       el.appendChild(c.tag === "path" ? buildPath(c) : buildNode(c));
     });
@@ -670,7 +689,7 @@
   var downloadJson = document.getElementById("downloadJson");
   var appEl = document.querySelector(".app");
   var ROLES = ["page", "panel", "button", "textfield", "checkbox", "switch", "slider", "tab", "menu",
-    "menuitem", "list", "listitem", "form", "label", "text", "icon", "shape", "underlay", "backdrop"];
+    "menuitem", "list", "listitem", "form", "label", "text", "icon", "image", "shape", "underlay", "backdrop"];
   var ZOOMS = [0.1, 0.17, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
   var ed = { doc: null, zoom: 0, sel: null, parents: null, byId: null, page: null, view: "detected" };
 

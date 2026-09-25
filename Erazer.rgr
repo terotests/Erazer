@@ -26,6 +26,8 @@ class Erazer {
     def img:ImageBuffer (new ImageBuffer())
     ; elements written so far: the next EVG id
     def emitCount:int 0
+    ; the analysis scale run() chose; crops of this image use the same
+    def usedScale:int 1
     def opts:ErazerOptions (new ErazerOptions())
 
     Constructor () {
@@ -2847,6 +2849,42 @@ class Erazer {
         }
     }
 
+    ; Siblings overlap, and later ones are drawn on top: the biggest boxes
+    ; first, text last, so a large surface never hides a smaller sibling's
+    ; content (a grey band over the "Start a post" box). Stable otherwise.
+    fn paintOrder:void (n:ErazerNode) {
+        def ks:[ErazerNode] n.kids
+        def cnt:int (array_length ks)
+        def i:int 1
+        while (i < cnt) {
+            def j:int i
+            def go:boolean true
+            while (go && (j > 0)) {
+                def a:ErazerNode (itemAt ks j)
+                def b:ErazerNode (itemAt ks (j - 1))
+                if ((this.paintRank(a)) < (this.paintRank(b))) {
+                    set ks j b
+                    set ks (j - 1) a
+                    j = (j - 1)
+                } {
+                    go = false
+                }
+            }
+            i = (i + 1)
+        }
+    }
+
+    ; lower is drawn first: surfaces by size, then controls, then text
+    fn paintRank:int (n:ErazerNode) {
+        if ((n.role == "label") || (n.role == "text")) {
+            return 2000000000
+        }
+        if ((n.role == "underlay") || (n.role == "backdrop")) {
+            return 0
+        }
+        return (1000000000 - (n.w * n.h))
+    }
+
     fn emitNode:EVGElement (n:ErazerNode px:int py:int) {
         emitCount = 0
         return (this.emitIn(n px py (0 - 1) 0 0))
@@ -2856,6 +2894,13 @@ class Erazer {
     ; not paint, and a square fill on it would cover the card's corners.
     fn emitIn:EVGElement (n:ErazerNode px:int py:int pr:int pg:int pb:int) {
         def el:EVGElement (EVGElement.createDiv())
+        if (n.role == "image") {
+            ; that part of the screenshot: "source" is the analysed image
+            ; and the Media Fragments "#xywh=" its window in pixels (the
+            ; JSON writer keeps src; it has no field for a view box)
+            el = (EVGElement.createImg())
+            el.src = ((((((("source#xywh=" + (to_string n.x)) + ",") + (to_string n.y)) + ",") + (to_string n.w)) + ",") + (to_string n.h))
+        }
         if ((n.role == "text") || (n.role == "label")) {
             el = (EVGElement.createSpan())
             el.textContent = n.text
@@ -2868,7 +2913,7 @@ class Erazer {
             ; a traced icon is its paths: a box in its ink colour under them
             ; drew every icon as a solid block
             def traced:boolean ((n.role == "icon") && ((array_length n.iconPaths) > 0))
-            if ((sameAsParent == false) && (traced == false)) {
+            if ((sameAsParent == false) && (traced == false) && (n.role != "image")) {
                 el.backgroundColor = (EVGColor.rgb(n.r n.g n.b))
             }
             if (n.gradDir >= 0) {
@@ -2882,7 +2927,10 @@ class Erazer {
                     ; text also lives on a child span
                 }
             }
-            if ((n.radius > 0) && (traced == false)) {
+            ; a backdrop is a piece of the page's surface between cards; its
+            ; "corners" are wherever the cards leave off (r=77 on a band
+            ; across a whole page)
+            if ((n.radius > 0) && (traced == false) && (n.role != "backdrop") && (n.role != "underlay")) {
                 el.box.borderRadius = (EVGUnit.px((to_double n.radius)))
             }
             if ((n.borderW > 0) && (traced == false)) {
@@ -2930,6 +2978,7 @@ class Erazer {
             el.addChild(pathEl)
             p = (p + 1)
         }
+        this.paintOrder(n)
         def i:int 0
         while (i < (array_length n.kids)) {
             def k:ErazerNode (itemAt n.kids i)
@@ -3458,22 +3507,45 @@ class Erazer {
 
     ; Mean of the pixels in the box that stand out most from bg: the ink.
     fn inkIn:void (n:ErazerNode bg:int) {
-        def maxd:int 0
+        ; The ink's contrast is the 90th percentile of the pixels that
+        ; differ from the background at all, not the strongest one: a loose
+        ; word box that takes in a photo's edge or a black rule would
+        ; otherwise keep only that, and grey letters become a 3px label.
+        def hist:[int]
+        def hq:int 0
+        while (hq < 256) {
+            push hist 0
+            hq = (hq + 1)
+        }
+        def seen:int 0
         def y:int n.y
         while (y < (n.maxY())) {
             def x:int n.x
             while (x < (n.maxX())) {
                 def l:int (this.lumaAt(x y))
                 if (l >= 0) {
-                    def d:int (this.absI((l - bg)))
-                    if (d > maxd) {
-                        maxd = d
+                    def d:int (this.minI(255 (this.absI((l - bg)))))
+                    if (d >= 24) {
+                        set hist d ((itemAt hist d) + 1)
+                        seen = (seen + 1)
                     }
                 }
                 x = (x + 1)
             }
             y = (y + 1)
         }
+        def maxd:int 0
+        if (seen > 0) {
+            def want:int (idiv (seen * 9) 10)
+            def acc:int 0
+            def hv:int 0
+            while ((hv < 256) && (acc < want)) {
+                acc = (acc + (itemAt hist hv))
+                maxd = hv
+                hv = (hv + 1)
+            }
+        }
+        def boxH:int n.h
         def sr:int 0
         def sg:int 0
         def sb:int 0
@@ -3506,7 +3578,8 @@ class Erazer {
         }
         ; OCR boxes run loose: the ink's rows are the label's height, and
         ; that height the glyph size.
-        if ((cnt > 0) && (iy1 >= iy0)) {
+        ; ... and never to a sliver of the word box
+        if ((cnt > 0) && (iy1 >= iy0) && ((((iy1 - iy0) + 1) * 10) >= (boxH * 4))) {
             n.y = iy0
             n.h = ((iy1 - iy0) + 1)
             n.fontSize = n.h
@@ -3597,7 +3670,10 @@ class Erazer {
         def i:int 0
         while (i < (array_length n.kids)) {
             def k:ErazerNode (itemAt n.kids i)
-            if ((this.isControl(k)) && ((this.overlapArea(k lab)) > 0) && ((k.cy()) < (lab.y + (idiv lab.h 2))) && ((k.maxY()) < (lab.maxY()))) {
+            ; only a trim that leaves most of a line: a control reaching far
+            ; into a word box (a card's photo beside a title) is not above it
+            def left:int ((lab.maxY()) - (k.maxY()))
+            if ((this.isControl(k)) && ((this.overlapArea(k lab)) > 0) && ((k.cy()) < (lab.y + (idiv lab.h 2))) && ((k.maxY()) < (lab.maxY())) && ((left * 10) >= (lab.h * 4))) {
                 def bottom:int (lab.maxY())
                 lab.y = (k.maxY())
                 lab.h = (bottom - lab.y)
@@ -3800,7 +3876,10 @@ class Erazer {
         while (p < (array_length lines)) {
             def lab2:ErazerNode (itemAt lines p)
             def box:ErazerNode (this.containerFor(page lab2.x lab2.y lab2.w lab2.h))
-            def mark:boolean (((strlen lab2.text) <= 1) && ((lab2.h * 10) > (medH * 18)))
+            ; one or two characters far taller than the page's lines are an
+            ; icon or a photo read as letters ("Ld" on a badge, "Pp" on a
+            ; banner)
+            def mark:boolean (((this.wordChars(lab2.text)) <= 2) && ((lab2.h * 10) > (medH * 18)))
             ; one character at the image edge is a frame's rounded corner
             ; read as "A" or "y"
             def atEdge:boolean ((lab2.x <= 1) || (lab2.y <= 1) || ((lab2.maxX()) >= (page.w - 1)) || ((lab2.maxY()) >= (page.h - 1)))
@@ -3945,6 +4024,232 @@ class Erazer {
         }
     }
 
+    fn hasText:boolean (n:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if ((k.role == "label") || (k.role == "text") || ((strlen k.text) > 0)) {
+                return true
+            }
+            if (this.hasText(k)) {
+                return true
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
+    ; A box with no text in it whose pixels are many colours, neither its
+    ; own nor the background around it, is a picture: a profile photo, a
+    ; game's coloured tile. Tracing it in one ink colour made a black
+    ; square; as an image it shows that part of the screenshot.
+    fn markImages:void (n:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.markImages((itemAt n.kids i))
+            i = (i + 1)
+        }
+        def cand:boolean ((n.role == "icon") || (n.role == "checkbox") || (n.role == "panel") || (n.role == "shape") || (n.role == "backdrop"))
+        if ((cand == false) || (n.w < 14) || (n.h < 14) || (this.hasText(n))) {
+            return
+        }
+        def bgc:[int] (this.ringColor(n.x n.y n.w n.h))
+        if ((array_length bgc) < 3) {
+            return
+        }
+        def br:int (itemAt bgc 0)
+        def bgg:int (itemAt bgc 1)
+        def bb:int (itemAt bgc 2)
+        def step:int (this.maxI(1 (idiv (this.minI(n.w n.h)) 16)))
+        def buckets:[int]
+        def bq:int 0
+        while (bq < 512) {
+            push buckets 0
+            bq = (bq + 1)
+        }
+        def other:int 0
+        def tot:int 0
+        def kinds:int 0
+        def y:int (n.y + 1)
+        while (y < ((n.maxY()) - 1)) {
+            def x:int (n.x + 1)
+            while (x < ((n.maxX()) - 1)) {
+                if (img.isValidCoord(x y)) {
+                    def c:Color (img.getPixel(x y))
+                    tot = (tot + 1)
+                    def nearInk:boolean (this.colorNear(c.r c.g c.b n.r n.g n.b 40))
+                    def nearBg:boolean (this.colorNear(c.r c.g c.b br bgg bb 40))
+                    if ((nearInk == false) && (nearBg == false)) {
+                        other = (other + 1)
+                        def key:int ((((idiv c.r 32) * 64) + ((idiv c.g 32) * 8)) + (idiv c.b 32))
+                        if ((itemAt buckets key) == 0) {
+                            kinds = (kinds + 1)
+                        }
+                        set buckets key ((itemAt buckets key) + 1)
+                    }
+                }
+                x = (x + step)
+            }
+            y = (y + step)
+        }
+        if ((tot > 0) && ((other * 4) >= tot) && (kinds >= 6)) {
+            n.role = "image"
+            n.confidence = 0.6
+            def none:[ErazerNode]
+            n.kids = none
+            def np:[string]
+            n.iconPaths = np
+            def nf:[string]
+            n.iconFills = nf
+            n.iconSvg = ""
+            n.iconName = ""
+            n.borderW = 0
+        }
+    }
+
+    fn imageUnder:boolean (n:ErazerNode lab:ErazerNode) {
+        def area:int (lab.w * lab.h)
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if ((k.role == "image") && (area > 0) && (((this.overlapArea(k lab)) * 2) >= area)) {
+                return true
+            }
+            if (this.imageUnder(k lab)) {
+                return true
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
+    ; OCR read on a photo ("So", "Ld" in a profile picture) is not text; a
+    ; sure word of three letters or more still is (a caption over a banner).
+    fn dropWordsOnImages:void (n:ErazerNode root:ErazerNode) {
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            def sure:boolean ((k.confidence >= 0.9) && ((this.wordChars(k.text)) >= 3))
+            if (k.ocrText && (sure == false) && (this.imageUnder(root k))) {
+                ; gone
+            } {
+                push keep k
+                this.dropWordsOnImages(k root)
+            }
+            i = (i + 1)
+        }
+        n.kids = keep
+    }
+
+    fn countText:int (n:ErazerNode) {
+        def c:int 0
+        if ((n.role == "label") || (n.role == "text")) {
+            c = 1
+        }
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            c = (c + (this.countText((itemAt n.kids i))))
+            i = (i + 1)
+        }
+        return c
+    }
+
+    fn shiftTree:void (n:ErazerNode dx:int dy:int) {
+        n.x = (n.x + dx)
+        n.y = (n.y + dy)
+        if (n.inkX1 > n.inkX0) {
+            n.inkX0 = (n.inkX0 + dx)
+            n.inkX1 = (n.inkX1 + dx)
+        }
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.shiftTree((itemAt n.kids i) dx dy)
+            i = (i + 1)
+        }
+    }
+
+    ; A card with clear edges (its own fill against its parent's, or a
+    ; border), text inside and well short of the page, is analysed again
+    ; on its own: that crop's background, font sizes and words decide what
+    ; is in it, and its subtree replaces the one the whole page gave.
+    fn refineCards:void (n:ErazerNode page:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            def cardRole:boolean ((k.role == "panel") || (k.role == "list") || (k.role == "listitem") || (k.role == "form"))
+            def ownFill:boolean ((this.colorNear(k.r k.g k.b n.r n.g n.b 4)) == false)
+            def big:boolean ((k.w >= 120) && (k.h >= 60) && ((k.w * k.h) <= (idiv ((page.w * page.h) * 6) 10)))
+            if (cardRole && big && (ownFill || (k.borderW > 0)) && ((this.countText(k)) >= 2)) {
+                def crop:ImageBuffer (this.crop(k.x k.y k.w k.h))
+                def sub (new Erazer())
+                sub.img = crop
+                sub.opts = (opts.forCrop(k.x k.y k.w k.h))
+                sub.opts.scale = usedScale
+                def doc:ErazerDoc (sub.run())
+                def root:ErazerNode (unwrap doc.root)
+                this.shiftTree(root k.x k.y)
+                k.kids = root.kids
+            } {
+                this.refineCards(k page)
+            }
+            i = (i + 1)
+        }
+    }
+
+    ; mean colour of the one-pixel ring just outside a box, [] when none
+    fn ringColor:[int] (x:int y:int w:int h:int) {
+        def out:[int]
+        def sr:int 0
+        def sg:int 0
+        def sb:int 0
+        def cnt:int 0
+        def px:int (x - 1)
+        while (px <= (x + w)) {
+            def e:int 0
+            while (e < 2) {
+                def py:int (y - 1)
+                if (e == 1) {
+                    py = (y + h)
+                }
+                if (img.isValidCoord(px py)) {
+                    def c:Color (img.getPixel(px py))
+                    sr = (sr + c.r)
+                    sg = (sg + c.g)
+                    sb = (sb + c.b)
+                    cnt = (cnt + 1)
+                }
+                e = (e + 1)
+            }
+            px = (px + 1)
+        }
+        def qy:int y
+        while (qy < (y + h)) {
+            def f:int 0
+            while (f < 2) {
+                def qx:int (x - 1)
+                if (f == 1) {
+                    qx = (x + w)
+                }
+                if (img.isValidCoord(qx qy)) {
+                    def c2:Color (img.getPixel(qx qy))
+                    sr = (sr + c2.r)
+                    sg = (sg + c2.g)
+                    sb = (sb + c2.b)
+                    cnt = (cnt + 1)
+                }
+                f = (f + 1)
+            }
+            qy = (qy + 1)
+        }
+        if (cnt > 0) {
+            push out (idiv sr cnt)
+            push out (idiv sg cnt)
+            push out (idiv sb cnt)
+        }
+        return out
+    }
+
     ; Nothing but its own fill inside the box: a chart bar or a swatch,
     ; where an icon shows the background through its strokes.
     fn solidBox:boolean (n:ErazerNode) {
@@ -4071,6 +4376,7 @@ class Erazer {
         def fullW:int img.width
         def fullH:int img.height
         def k:int (this.pickScale())
+        usedScale = k
         def full:ImageBuffer img
         if (k > 1) {
             img = (this.boxDown(k))
@@ -4157,6 +4463,11 @@ class Erazer {
         this.iconsFromCheckboxes(page page texts2)
         if opts.nameIcons {
             this.nameIcons(page (ErazerIcons.shared()) page)
+        }
+        this.markImages(page)
+        this.dropWordsOnImages(page page)
+        if opts.refineCards {
+            this.refineCards(page page)
         }
         this.alignTexts(page)
         def boxes:[ErazerLayoutBox] (ErazerLayoutNet.boxesFromTree(page w h))

@@ -59,6 +59,11 @@ class ErazerOptions {
     def wordLowConf:int 25
     ; Ignore the page-sized background as a widget; it still becomes the root.
     def skipFullBleed:boolean true
+    ; Analyse each clearly bounded card again on its own crop (its own
+    ; background, font sizes and OCR words) and put that subtree in its
+    ; place. A busy page (a social feed) comes out much cleaner card by
+    ; card than in one pass.
+    def refineCards:boolean true
 
     Constructor () {
         def t:[string]
@@ -75,6 +80,41 @@ class ErazerOptions {
         wordConf = e
         def f:[int]
         wordLine = f
+    }
+
+    ; The same settings for a crop at (x, y): the words mostly inside it,
+    ; moved into its coordinates; no further refinement.
+    fn forCrop:ErazerOptions (x:int y:int w:int h:int) {
+        def o:ErazerOptions (ErazerOptions.defaults())
+        o.colorTol = colorTol
+        o.surfaceTol = surfaceTol
+        o.surfaceStep = surfaceStep
+        o.surfaceDrift = surfaceDrift
+        o.fragArea = fragArea
+        o.minArea = minArea
+        o.minGlyphH = minGlyphH
+        o.maxGlyphH = maxGlyphH
+        o.ocr = ocr
+        o.vectorizeIcons = vectorizeIcons
+        o.nameIcons = nameIcons
+        o.iconMinConf = iconMinConf
+        o.iconMin = iconMin
+        o.iconMax = iconMax
+        o.scale = scale
+        o.wordMinConf = wordMinConf
+        o.wordLowConf = wordLowConf
+        o.skipFullBleed = skipFullBleed
+        o.refineCards = false
+        def i:int 0
+        while (i < (array_length wordText)) {
+            def cx:int ((itemAt wordX i) + (idiv (itemAt wordW i) 2))
+            def cy:int ((itemAt wordY i) + (idiv (itemAt wordH i) 2))
+            if ((cx >= x) && (cy >= y) && (cx < (x + w)) && (cy < (y + h))) {
+                o.addLineWord((itemAt wordText i) ((itemAt wordX i) - x) ((itemAt wordY i) - y) (itemAt wordW i) (itemAt wordH i) (itemAt wordConf i) (itemAt wordLine i))
+            }
+            i = (i + 1)
+        }
+        return o
     }
 
     fn addWord:void (text:string x:int y:int w:int h:int conf:int) {
