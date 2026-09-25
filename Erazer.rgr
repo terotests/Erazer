@@ -24,6 +24,8 @@ Import "pkg:image/ImageBuffer.rgr"
 
 class Erazer {
     def img:ImageBuffer (new ImageBuffer())
+    ; elements written so far: the next EVG id
+    def emitCount:int 0
     def opts:ErazerOptions (new ErazerOptions())
 
     Constructor () {
@@ -2846,6 +2848,7 @@ class Erazer {
     }
 
     fn emitNode:EVGElement (n:ErazerNode px:int py:int) {
+        emitCount = 0
         return (this.emitIn(n px py (0 - 1) 0 0))
     }
 
@@ -2890,6 +2893,9 @@ class Erazer {
         if ((strlen n.align) > 0) {
             el.textAlign = n.align
         }
+        emitCount = (emitCount + 1)
+        n.uid = ("n" + (to_string emitCount))
+        el.id = n.uid
         el.className = ("erazer-" + n.role)
         if ((strlen n.iconName) > 0) {
             el.className = ((el.className + " erazer-icon-") + n.iconName)
@@ -3100,6 +3106,9 @@ class Erazer {
         def s:string "<g>"
         s = (s + "<rect x=\"" + (to_string n.x) + "\" y=\"" + (to_string n.y) + "\" ")
         s = (s + "width=\"" + (to_string n.w) + "\" height=\"" + (to_string n.h) + "\" ")
+        if ((strlen n.uid) > 0) {
+            s = (s + "data-node=\"" + n.uid + "\" ")
+        }
         if (n.boxId > 0) {
             s = (s + "data-box=\"" + (to_string (n.boxId - 1)) + "\" ")
             s = (s + "fill=\"transparent\" ")

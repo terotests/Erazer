@@ -106,17 +106,27 @@ colour, the recogniser's name on hover) can be checked against the
 screenshot. When Tesseract.js cannot be loaded the run goes on without
 words.
 
-**Rekonstruktio** is also a small editor, Figma-style:
+The live page is laid out like a design tool:
 
-- zoom − / % / + / **Sovita** (fit) / **1:1** above and below the canvas,
-  Ctrl/⌘ + wheel, and the keys `+` `-` `0`;
-- click an element (or pick it under **Tasot**, the layer list) and the
-  inspector on the right shows and edits its type, text, X / Y / width /
-  height, font size, colour, alignment, background, radius, an icon's
-  name and ink colour;
-- **Poista** or Delete / Backspace removes it, **Valitse vanhempi**
-  selects its parent, Esc clears the selection;
-- edits go to the EVG JSON below; **Lataa EVG JSON** saves it.
+- **top bar**: pick, photograph or paste (Ctrl/⌘+V) a screenshot, or drop
+  it anywhere; OCR on/off and its language; **Lataa EVG JSON**;
+- **left, Tasot**: the detected tree (role and text / icon name per row);
+  **Näytteet** holds the synthetic and HTML / shadcn samples;
+- **centre**: **Tunnistettu** (the image with Erazer's boxes) and **EVG**
+  (the tree drawn back as DOM: text, alignment, radii, gradients, traced
+  icons in their ink); a floating bar at the bottom zooms (− / % / + /
+  **Sovita** / **1:1**, also Ctrl/⌘ + wheel and `+` `-` `0`) and sets the
+  image's opacity;
+- **right, Design**: the selected element's type, text, X / Y / width /
+  height, font size, colour, alignment, background, radius, an icon's name
+  and ink colour, all editable; **Poista** or Delete / Backspace removes
+  it, **Valitse vanhempi** selects its parent, Esc clears. **Raw** shows the
+  outline and the EVG JSON, **Layout** the layout-net lab below.
+
+An element is one selection everywhere: a box in the image, the element in
+the EVG view and its row under Tasot share an id (`n12`, the EVG element's
+`id` and the overlay box's `data-node`). Edits change the EVG JSON; a
+deleted element's box is hidden in the image view too.
 
 The OCR language defaults to **englanti + suomi** in a Finnish browser:
 English alone reads "Lisää" as "Lisaa" at 51% and it is dropped.
@@ -197,7 +207,8 @@ outside the group is nearer than the members are to each other). A user selectio
 scale, font-size and leave-one-out jitter expand it to a dozen
 samples, with axis-flips as hard negatives.
 
-The live page: click boxes, pick `lista` / `toolbar` / a new concept,
+The live page (**Layout** tab open, where a click on a box picks it
+instead of selecting it): click boxes, pick `lista` / `toolbar` / a new concept,
 **Opeta valinta**. Or **Rakenna HTML-testsetti**: it renders the known
 widgets from `web/components.html`, records DOM boxes, rasterises HTML →
 PNG, vectorises with Erazer, and stores labelled samples in IndexedDB.
