@@ -53,6 +53,7 @@ a manual run can override it.
 | Tabs | Three or more sibling labelled bars on one row |
 | Menu | Three or more stacked labelled rows |
 | Form | A panel that holds two or more fields |
+| Image | A box with no text whose pixels are many colours, neither its own nor the background around it (a profile photo, a game's tile): it becomes an EVG `img` with `src` `source#xywh=x,y,w,h` — that window of the analysed screenshot (the JSON writer keeps `src`; it has no field for a view box). OCR read on a photo is dropped |
 | Icon | A small non-text mark; vectorized with `EvgBitmapTracer` to SVG / EVG paths. The crop is traced as ink (black) against the colour around the box (white), so a white icon on an orange button is traced as the icon; the EVG node paints no box, border or radius of its own and its paths take the ink colour |
 
 The EVG tree uses `position: absolute` so the reconstruction keeps the
@@ -130,6 +131,23 @@ deleted element's box is hidden in the image view too.
 
 The OCR language defaults to **englanti + suomi** in a Finnish browser:
 English alone reads "Lisää" as "Lisaa" at 51% and it is dropped.
+
+## Busy pages: card by card
+
+One pass over a whole social feed mixes everything's statistics: the
+median line height, the background around a word, what counts as a big
+mark. So after the first pass every clearly bounded card — its own fill
+against its parent's or a border, two or more texts inside, at most 60% of
+the page — is analysed again on its own crop, with the OCR words that fall
+in it, at the same scale, and that subtree replaces the card's
+(`refineCards`, one level deep).
+
+Siblings are drawn largest first and text last, so a big surface never
+hides a smaller element's content. A word box's ink trim keeps at least
+40% of the box and measures contrast at the 90th percentile, so a box
+that takes in a photo's edge does not become a 3px label; one or two
+characters nearly twice the page's line height (a badge read as "Ld") are
+dropped; a backdrop has no corner radius.
 
 ## Icon names
 
