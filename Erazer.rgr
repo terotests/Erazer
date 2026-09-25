@@ -3148,6 +3148,39 @@ class Erazer {
         return true
     }
 
+    ; A word under --wordMinConf, but not under --wordLowConf, is kept when
+    ; the region pass found a text run under it: most of the run lies in
+    ; the word's box.
+    fn wordVouched:boolean (i:int runs:[ErazerNode]) {
+        if ((itemAt opts.wordConf i) < opts.wordLowConf) {
+            return false
+        }
+        if ((this.wordChars((itemAt opts.wordText i))) == 0) {
+            return false
+        }
+        def wx:int (itemAt opts.wordX i)
+        def wy:int (itemAt opts.wordY i)
+        def ww:int (itemAt opts.wordW i)
+        def wh:int (itemAt opts.wordH i)
+        if ((ww <= 0) || (wh <= 0)) {
+            return false
+        }
+        def r:int 0
+        while (r < (array_length runs)) {
+            def k:ErazerNode (itemAt runs r)
+            def area:int (k.w * k.h)
+            if ((k.ocrText == false) && (area > 0)) {
+                def ix:int ((this.minI((wx + ww) (k.maxX()))) - (this.maxI(wx k.x)))
+                def iy:int ((this.minI((wy + wh) (k.maxY()))) - (this.maxI(wy k.y)))
+                if ((ix > 0) && (iy > 0) && (((ix * iy) * 10) >= (area * 6))) {
+                    return true
+                }
+            }
+            r = (r + 1)
+        }
+        return false
+    }
+
     ; Word indices in reading order: by line (tops within half a height),
     ; then left to right.
     fn sortWords:void (ids:[int]) {
@@ -3236,7 +3269,14 @@ class Erazer {
         lab.text = (this.joinWords(line))
         lab.ocrText = true
         lab.fontSize = (this.medianInt(hs))
-        lab.confidence = 0.8
+        ; the least sure word of the line
+        def least:int 100
+        def cq:int 0
+        while (cq < (array_length line)) {
+            least = (this.minI(least (itemAt opts.wordConf (itemAt line cq))))
+            cq = (cq + 1)
+        }
+        lab.confidence = ((to_double least) / 100.0)
         return lab
     }
 
@@ -3429,6 +3469,33 @@ class Erazer {
         return false
     }
 
+    fn removeNode:boolean (n:ErazerNode target:ErazerNode) {
+        def keep:[ErazerNode]
+        def hit:boolean false
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            if (k == target) {
+                hit = true
+            } {
+                push keep k
+            }
+            i = (i + 1)
+        }
+        if hit {
+            n.kids = keep
+            return true
+        }
+        def j:int 0
+        while (j < (array_length n.kids)) {
+            if (this.removeNode((itemAt n.kids j) target)) {
+                return true
+            }
+            j = (j + 1)
+        }
+        return false
+    }
+
     ; A word box that reaches up into a control above it ("Orders" taking
     ; in the bottom of its tab icon) starts where the control ends.
     fn clipUnderControls:void (n:ErazerNode lab:ErazerNode) {
@@ -3447,8 +3514,16 @@ class Erazer {
 
     ; A short word centred in a small badge is the badge's glyph (a chart
     ; icon read as "all"), not a caption.
+    ; At any scale: the badge is about square, and the "word" is at least a
+    ; third of its height, where a caption inside a square button is small.
     fn badgeGlyph:boolean (box:ErazerNode lab:ErazerNode) {
-        if (((strlen lab.text) > 3) || (box.role == "page") || (box.w > 96) || (box.h > 96)) {
+        if (((strlen lab.text) > 3) || (box.role == "page")) {
+            return false
+        }
+        if (((this.absI((box.w - box.h))) * 8) > box.w) {
+            return false
+        }
+        if ((lab.h * 3) < box.h) {
             return false
         }
         def tol:int (this.maxI(4 (idiv box.h 8)))
@@ -3520,15 +3595,28 @@ class Erazer {
         if (n == 0) {
             return
         }
+        ; text the region pass found on its own vouches for a word OCR is
+        ; unsure of ("Wed" at 38%, "$32.575" at 51%)
+        def runs:[ErazerNode]
+        this.collectTexts(page runs)
         def ids:[int]
         def i:int 0
         while (i < n) {
-            if (this.wordOk(i)) {
+            if ((this.wordOk(i)) || (this.wordVouched(i runs))) {
                 push ids i
             }
             i = (i + 1)
         }
         this.sortWords(ids)
+        ; the page's usual word height: a word box that took in the icon
+        ; above it is two or three times that
+        def whs:[int]
+        def wi:int 0
+        while (wi < (array_length ids)) {
+            push whs (itemAt opts.wordH (itemAt ids wi))
+            wi = (wi + 1)
+        }
+        def usualH:int (this.medianInt(whs))
         def used:[int]
         def u:int 0
         while (u < (array_length ids)) {
@@ -3580,6 +3668,13 @@ class Erazer {
                     def wid:int (itemAt row r)
                     def gap:int ((itemAt opts.wordX wid) - right)
                     def gh:int (this.minI(prevH (itemAt opts.wordH wid)))
+                    ; two captions whose boxes both reach into their icons
+                    ; ("Analytics" and "Customers", 30px each over 11px
+                    ; letters, 48px apart) are still two
+                    def capH:int (idiv (usualH * 3) 2)
+                    if ((usualH > 0) && (gh > capH)) {
+                        gh = capH
+                    }
                     if (((array_length line) > 0) && (gap > ((gh * 2) + 2))) {
                         push lines (this.labelOfWords(line))
                         def fresh:[int]
@@ -3611,8 +3706,24 @@ class Erazer {
             def lab2:ErazerNode (itemAt lines p)
             def box:ErazerNode (this.containerFor(page lab2.x lab2.y lab2.w lab2.h))
             def mark:boolean (((strlen lab2.text) <= 1) && ((lab2.h * 10) > (medH * 18)))
+            ; one character at the image edge is a frame's rounded corner
+            ; read as "A" or "y"
+            def atEdge:boolean ((lab2.x <= 1) || (lab2.y <= 1) || ((lab2.maxX()) >= (page.w - 1)) || ((lab2.maxY()) >= (page.h - 1)))
+            if (((this.wordChars(lab2.text)) <= 1) && atEdge) {
+                mark = true
+            }
             this.clipUnderControls(page lab2)
-            if (((this.isControl(box)) == false) && (mark == false) && ((this.onControl(page lab2)) == false) && ((this.badgeGlyph(box lab2)) == false)) {
+            ; a sure word of three letters or more is text even where the
+            ; region pass made a "checkbox" of its letters ("Fri" at 96%)
+            def sure:boolean ((lab2.confidence >= 0.9) && ((this.wordChars(lab2.text)) >= 3))
+            ; ... and when the "control" it lands in is its own letters (a
+            ; box the word covers for the most part), the box goes
+            if (sure && (this.isControl(box)) && (((this.overlapArea(box lab2)) * 10) >= ((box.w * box.h) * 6))) {
+                this.removeNode(page box)
+                box = (this.containerFor(page lab2.x lab2.y lab2.w lab2.h))
+            }
+            def onCtl:boolean ((sure == false) && (this.onControl(page lab2)))
+            if (((this.isControl(box)) == false) && (mark == false) && (onCtl == false) && ((this.badgeGlyph(box lab2)) == false)) {
                 this.inkIn(lab2 (this.localBgLuma(lab2)))
                 this.keepInkWords(lab2)
                 this.dropRunsIn(page lab2)
@@ -3694,10 +3805,24 @@ class Erazer {
 
     ; Names each icon with the recogniser. A "checkbox" the recogniser is
     ; sure is some other icon (a gear, a bell) becomes an icon too.
-    fn nameIcons:void (n:ErazerNode net:ErazerIcons) {
+    fn underWords:boolean (n:ErazerNode box:ErazerNode) {
+        if ((n != box) && n.ocrText && ((this.overlapArea(n box)) > 0)) {
+            return true
+        }
         def i:int 0
         while (i < (array_length n.kids)) {
-            this.nameIcons((itemAt n.kids i) net)
+            if (this.underWords((itemAt n.kids i) box)) {
+                return true
+            }
+            i = (i + 1)
+        }
+        return false
+    }
+
+    fn nameIcons:void (n:ErazerNode net:ErazerIcons root:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.nameIcons((itemAt n.kids i) net root)
             i = (i + 1)
         }
         if ((n.role != "icon") && (n.role != "checkbox")) {
@@ -3713,7 +3838,8 @@ class Erazer {
         def boxy:boolean ((g.name == "checkbox") || (g.name == "square") || (g.name == "check") || (g.name == "check-circle") || (g.name == "circle") || (g.name == "none"))
         ; a letter pair the reader left as a small "checkbox" ("ly" in
         ; Analytics, 12×9) is not promoted: icons are bigger than text
-        if ((n.role == "checkbox") && (boxy == false) && (g.confidence >= 0.85) && (n.w >= 14) && (n.h >= 14)) {
+        ; nor a letter of an OCR word ("$" of "$189" at 3x, 52×48)
+        if ((n.role == "checkbox") && (boxy == false) && (g.confidence >= 0.85) && (n.w >= 14) && (n.h >= 14) && ((this.underWords(root n)) == false)) {
             n.role = "icon"
             n.confidence = 0.7
             this.traceIcons(n)
@@ -3935,7 +4061,7 @@ class Erazer {
         this.collectTexts(page texts2)
         this.iconsFromCheckboxes(page page texts2)
         if opts.nameIcons {
-            this.nameIcons(page (ErazerIcons.shared()))
+            this.nameIcons(page (ErazerIcons.shared()) page)
         }
         this.alignTexts(page)
         def boxes:[ErazerLayoutBox] (ErazerLayoutNet.boxesFromTree(page w h))
