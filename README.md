@@ -149,6 +149,15 @@ that takes in a photo's edge does not become a 3px label; one or two
 characters nearly twice the page's line height (a badge read as "Ld") are
 dropped; a backdrop has no corner radius.
 
+Two panels of one colour and width stacked with a hairline between them
+(an app's body and its tab bar) are one panel, and the page showing
+through a rounded frame's corners (small textless boxes touching two of
+its edges) is not part of it. One or two characters OCR is not sure of
+whose box is mostly solid ink are an icon read as letters ("0" for a
+video icon, "as" for two person silhouettes) and are dropped before
+words are joined into lines. A card's own analysis replaces any of the
+first pass's words that fell inside it, so a word is not there twice.
+
 ## Icon names
 
 Each icon (and each "checkbox") is named by a small network in
