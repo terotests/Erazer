@@ -3325,6 +3325,45 @@ class Erazer {
         return false
     }
 
+    ; One or two characters OCR is not sure of, whose box is mostly solid
+    ; ink, are an icon read as letters: the video icon as "0", two person
+    ; silhouettes as "as". Letters cover a quarter to a third of their box.
+    fn iconWord:boolean (i:int) {
+        if (((this.wordChars((itemAt opts.wordText i))) > 2) || ((itemAt opts.wordConf i) >= 90)) {
+            return false
+        }
+        def x0:int (itemAt opts.wordX i)
+        def y0:int (itemAt opts.wordY i)
+        def w:int (itemAt opts.wordW i)
+        def h:int (itemAt opts.wordH i)
+        if ((w < 4) || (h < 4)) {
+            return false
+        }
+        def probe:ErazerNode (ErazerNode.of("label" x0 y0 w h 0 0 0))
+        def bg:int (this.localBgLuma(probe))
+        if (bg < 0) {
+            return false
+        }
+        def ink:int 0
+        def tot:int 0
+        def y:int y0
+        while (y < (y0 + h)) {
+            def x:int x0
+            while (x < (x0 + w)) {
+                def l:int (this.lumaAt(x y))
+                if (l >= 0) {
+                    tot = (tot + 1)
+                    if ((this.absI((l - bg))) >= 40) {
+                        ink = (ink + 1)
+                    }
+                }
+                x = (x + 1)
+            }
+            y = (y + 1)
+        }
+        return ((tot > 0) && ((ink * 2) >= tot))
+    }
+
     ; Word indices in reading order: by line (tops within half a height),
     ; then left to right.
     fn sortWords:void (ids:[int]) {
@@ -3773,7 +3812,7 @@ class Erazer {
         def ids:[int]
         def i:int 0
         while (i < n) {
-            if ((this.wordOk(i)) || (this.wordVouched(i runs))) {
+            if (((this.wordOk(i)) || (this.wordVouched(i runs))) && ((this.iconWord(i)) == false)) {
                 push ids i
             }
             i = (i + 1)
@@ -4142,6 +4181,101 @@ class Erazer {
         n.kids = keep
     }
 
+    fn dropWordsIn:void (n:ErazerNode box:ErazerNode) {
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def c:ErazerNode (itemAt n.kids i)
+            def inside:boolean (((c.cx()) >= box.x) && ((c.cy()) >= box.y) && ((c.cx()) < (box.maxX())) && ((c.cy()) < (box.maxY())))
+            if ((c != box) && c.ocrText && inside) {
+                ; gone
+            } {
+                push keep c
+                if (c != box) {
+                    this.dropWordsIn(c box)
+                }
+            }
+            i = (i + 1)
+        }
+        n.kids = keep
+    }
+
+    ; A frame split by a hairline (an app's body and its tab bar, one
+    ; colour, the same width, stacked) is one panel; the body alone took
+    ; the frame's top corners for all four and rounded its bottom in the
+    ; middle of the screen.
+    fn mergeStacked:void (n:ErazerNode) {
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            this.mergeStacked((itemAt n.kids i))
+            i = (i + 1)
+        }
+        def merged:boolean true
+        while merged {
+            merged = false
+            def a:int 0
+            while ((merged == false) && (a < (array_length n.kids))) {
+                def p:ErazerNode (itemAt n.kids a)
+                def b:int 0
+                while ((merged == false) && (b < (array_length n.kids))) {
+                    def q:ErazerNode (itemAt n.kids b)
+                    def gap:int (q.y - (p.maxY()))
+                    def panels:boolean ((p.role == "panel") && (q.role == "panel"))
+                    def same:boolean (((this.absI((p.x - q.x))) <= 3) && ((this.absI(((p.maxX()) - (q.maxX())))) <= 3))
+                    if ((a != b) && panels && same && (gap >= 0) && (gap <= 3) && (p.w >= 60) && (this.colorNear(p.r p.g p.b q.r q.g q.b 6))) {
+                        p.h = ((q.maxY()) - p.y)
+                        p.radius = (this.maxI(p.radius q.radius))
+                        def j:int 0
+                        while (j < (array_length q.kids)) {
+                            push p.kids (itemAt q.kids j)
+                            j = (j + 1)
+                        }
+                        def keep:[ErazerNode]
+                        def t:int 0
+                        while (t < (array_length n.kids)) {
+                            if (t != b) {
+                                push keep (itemAt n.kids t)
+                            }
+                            t = (t + 1)
+                        }
+                        n.kids = keep
+                        this.dropCornerBits(p)
+                        merged = true
+                    }
+                    b = (b + 1)
+                }
+                a = (a + 1)
+            }
+        }
+        this.dropCornerBits(n)
+    }
+
+    ; What the page shows outside a rounded frame's corner is not in the
+    ; frame: a small textless box touching two of its edges at a corner.
+    fn dropCornerBits:void (n:ErazerNode) {
+        if (n.radius < 12) {
+            return
+        }
+        def lim:int (idiv (n.radius * 3) 2)
+        def keep:[ErazerNode]
+        def i:int 0
+        while (i < (array_length n.kids)) {
+            def k:ErazerNode (itemAt n.kids i)
+            def atL:boolean ((k.x - n.x) <= 2)
+            def atR:boolean (((n.maxX()) - (k.maxX())) <= 2)
+            def atT:boolean ((k.y - n.y) <= 2)
+            def atB:boolean (((n.maxY()) - (k.maxY())) <= 2)
+            def corner:boolean ((atL || atR) && (atT || atB))
+            if (corner && (k.w <= lim) && (k.h <= lim) && ((this.hasText(k)) == false) && ((this.countText(k)) == 0)) {
+                ; gone
+            } {
+                push keep k
+            }
+            i = (i + 1)
+        }
+        n.kids = keep
+    }
+
     fn countText:int (n:ErazerNode) {
         def c:int 0
         if ((n.role == "label") || (n.role == "text")) {
@@ -4189,6 +4323,9 @@ class Erazer {
                 def doc:ErazerDoc (sub.run())
                 def root:ErazerNode (unwrap doc.root)
                 this.shiftTree(root k.x k.y)
+                ; the first pass may have put the card's words somewhere
+                ; else as well: the card's own analysis has them now
+                this.dropWordsIn(page k)
                 k.kids = root.kids
             } {
                 this.refineCards(k page)
@@ -4464,6 +4601,7 @@ class Erazer {
         if opts.nameIcons {
             this.nameIcons(page (ErazerIcons.shared()) page)
         }
+        this.mergeStacked(page)
         this.markImages(page)
         this.dropWordsOnImages(page page)
         if opts.refineCards {
